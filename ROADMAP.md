@@ -6,23 +6,23 @@ Tick an item `[x]` when it's done. 🟡 in the text means the item is done in pa
 ## Progress compared with Rainmeter for Windows
 
 - Overall estimate: **10–15%**
-- Roadmap checklist: 41 / 145 ≈ **28%**
+- Roadmap checklist: 42 / 146 ≈ **29%**
 
 ## Next up
 1. [x] Transparent, borderless, draggable window
 2. [x] String meter: `Prefix`/`Postfix`, `StringCase`
-3. [ ] Mouse actions plus the first bangs (`!SetVariable`, `!ShowMeter`/`!HideMeter`, `!Refresh`)
+3. [x] Mouse actions plus the first bangs (`!SetVariable`, `!ShowMeter`/`!HideMeter`, `!Refresh`)
 4. [ ] `LocalFont` (skin fonts loaded for our program only, with fontconfig's `FcConfigAppFontAddFile`)
 5. [ ] More built-in variables: `#CURRENTCONFIG#`, `#SCREENAREAWIDTH#`/`HEIGHT#`, `#WORKAREA…#`, `#PROGRAMPATH#`, `#SETTINGSPATH#`
 6. [ ] Faster style lookup with a HashMap
 7. [ ] More section variables: `[Measure:%]`, `[Measure:/1000,2]`, `[&Measure:EscapeRegExp]`, and the like
-8. [ ] Load, unload and refresh skins (`!Refresh` needs this; everything below builds on it)
+8. [ ] Load, unload and refresh skins (`!Refresh` of other skins needs this; everything below builds on it)
 9. [ ] Several skins at once (one process, one window per skin)
 10. [ ] Remember each skin's position and settings (our own Rainmeter.ini; Wayland limits window placement)
 11. [ ] Right-click menu
 12. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
 13. [ ] Click-through, Draggable, SnapEdges, KeepOnScreen
-14. [ ] The rest of the core bangs: `!SetVariable`, `!SetOption`, `!Update`/`!Redraw`, `!EnableMeasure`/`!DisableMeasure`/`!PauseMeasure`, `!Move`, `!ActivateConfig`/`!DeactivateConfig`
+14. [ ] The rest of the core bangs: `!SetOption`, `!EnableMeasure`/`!DisableMeasure`/`!PauseMeasure`, `!Move`, `!ActivateConfig`/`!DeactivateConfig`
 15. [ ] `[Rainmeter]` actions: `OnRefreshAction`, `OnUpdateAction`, `OnCloseAction`, `OnFocusAction`/`OnUnfocusAction`
 16. [ ] Running programs from actions (safely: launched directly, never through a shell)
 17. [ ] Tray icon (GNOME hides tray icons without an extension)
@@ -98,8 +98,9 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] Bangs: `!ShowMeter`, `!HideMeter`, `!ToggleMeter` (take effect at the next update, as in Rainmeter)
 - [ ] Bangs: `!ShowMeterGroup`, `!HideMeterGroup`, `!ToggleMeterGroup`
 - [ ] Bangs: `!SetOption`, `!SetOptionGroup`
-- [x] Bangs: `!Update`, `!Redraw` (`!Update` doesn't restart the Update timer yet)
-- [ ] Bangs: `!UpdateMeter`, `!UpdateMeasure`, `!Refresh`
+- [x] Bangs: `!Update` (restarts the Update timer), `!Redraw`
+- [x] Bangs: `!Refresh` (this skin only; reloads the file, restarts the timer, keeps the old skin on an error)
+- [ ] Bangs: `!UpdateMeter`, `!UpdateMeasure`
 - [ ] Bangs: `!EnableMeasure`, `!DisableMeasure`, `!PauseMeasure`, `!CommandMeasure`
 - [ ] Bangs: `!Move`, `!ActivateConfig`, `!DeactivateConfig`
 - [ ] Running external programs from actions (`["program"]`)

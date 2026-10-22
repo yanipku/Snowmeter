@@ -9,6 +9,7 @@ pub enum After {
     Nothing,
     Redraw, // !Redraw: paint the skin as it is now
     Update, // !Update: a full update straight away, then paint
+    Refresh, // !Refresh: read the skin file again from scratch
 }
 
 // Runs one command from an action. Only a few bangs are supported so far;
@@ -54,6 +55,13 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
         }
         "redraw" => After::Redraw,
         "update" => After::Update,
+        "refresh" => {
+            // Only one skin runs for now, so a config name can only mean this one
+            if let Some(config) = args.first() {
+                println!("!Refresh {config}: other skins aren't supported yet, refreshing this one");
+            }
+            After::Refresh
+        }
         _ => {
             println!("!{name} isn't supported yet");
             After::Nothing

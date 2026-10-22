@@ -3,7 +3,10 @@ use crate::measure::{Measure, Ranged};
 use crate::meter::{self, Color, Layout, Meter};
 use crate::mouse::{MouseActions, MouseEvent};
 use crate::{calc, clock, cpu, formula, memory};
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 const MAX_WINDOW_SIDE: f64 = 16384.0; // a skin can't ask for an absurdly large window
 const MAX_STYLES: usize = 16; // parents a single MeterStyle may list
@@ -18,6 +21,8 @@ pub struct Skin {
     pub dynamic_window: bool, // DynamicWindowSize=1
     pub mouse: MouseActions,  // mouse actions of [Rainmeter], for clicks no meter takes
     pub vars: HashMap<String, String>, // the variable table, kept so !SetVariable can change it
+    pub file: PathBuf,       // the skin's .ini and the skins folder: what load() needs
+    pub skins_root: PathBuf, // to read the skin again for !Refresh
 }
 
 impl Skin {
@@ -325,6 +330,8 @@ pub fn load(skin_file: &Path, skins_root: &Path) -> Result<Skin, String> {
         dynamic_window,
         mouse,
         vars,
+        file: skin_file.to_path_buf(),
+        skins_root: skins_root.to_path_buf(),
     })
 }
 
