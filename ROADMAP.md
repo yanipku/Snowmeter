@@ -6,30 +6,22 @@ Tick an item `[x]` when it's done. 🟡 in the text means the item is done in pa
 ## Progress compared with Rainmeter for Windows
 
 - Overall estimate: **10–15%**
-- Roadmap checklist: 42 / 146 ≈ **29%**
+- Roadmap checklist: 49 / 150 ≈ **33%**
 
 ## Next up
-1. [x] Transparent, borderless, draggable window
-2. [x] String meter: `Prefix`/`Postfix`, `StringCase`
-3. [x] Mouse actions plus the first bangs (`!SetVariable`, `!ShowMeter`/`!HideMeter`, `!Refresh`)
-4. [ ] `LocalFont` (skin fonts loaded for our program only, with fontconfig's `FcConfigAppFontAddFile`)
-5. [ ] More built-in variables: `#CURRENTCONFIG#`, `#SCREENAREAWIDTH#`/`HEIGHT#`, `#WORKAREA…#`, `#PROGRAMPATH#`, `#SETTINGSPATH#`
-6. [ ] Faster style lookup with a HashMap
-7. [ ] More section variables: `[Measure:%]`, `[Measure:/1000,2]`, `[&Measure:EscapeRegExp]`, and the like
-8. [ ] Load, unload and refresh skins (`!Refresh` of other skins needs this; everything below builds on it)
-9. [ ] Several skins at once (one process, one window per skin)
-10. [ ] Remember each skin's position and settings (our own Rainmeter.ini; Wayland limits window placement)
-11. [ ] Right-click menu
-12. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
-13. [ ] Click-through, Draggable, SnapEdges, KeepOnScreen
-14. [ ] The rest of the core bangs: `!SetOption`, `!EnableMeasure`/`!DisableMeasure`/`!PauseMeasure`, `!Move`, `!ActivateConfig`/`!DeactivateConfig`
-15. [ ] `[Rainmeter]` actions: `OnRefreshAction`, `OnUpdateAction`, `OnCloseAction`, `OnFocusAction`/`OnUnfocusAction`
-16. [ ] Running programs from actions (safely: launched directly, never through a shell)
-17. [ ] Tray icon (GNOME hides tray icons without an extension)
-18. [ ] Manage window: a GUI for Snowmeter outside the terminal, like Rainmeter's Manage dialog (see "Manage window" below)
-19. [ ] SkinInstaller: install `.rmskin` packages (see "Skin installer" below)
+1. [ ] Several skins at once (one process, one window per skin)
+2. [ ] Remember each skin's position and settings (our own Rainmeter.ini; Wayland limits window placement). Then shift monitor rectangles so the primary is at 0,0, as on Windows (GTK puts the top-left of all monitors at 0,0)
+3. [ ] Right-click menu
+4. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
+5. [ ] Click-through, Draggable, SnapEdges, KeepOnScreen
+6. [ ] The rest of the core bangs: `!SetOption`, `!EnableMeasure`/`!DisableMeasure`/`!PauseMeasure`, `!Move`
+7. [ ] `[Rainmeter]` actions: `OnRefreshAction`, `OnUpdateAction`, `OnCloseAction`, `OnFocusAction`/`OnUnfocusAction`
+8. [ ] Running programs from actions (safely: launched directly, never through a shell)
+9. [ ] Tray icon (GNOME hides tray icons without an extension)
+10. [ ] Manage window: a GUI for Snowmeter outside the terminal, like Rainmeter's Manage dialog (see "Manage window" below)
+11. [ ] SkinInstaller: install `.rmskin` packages (see "Skin installer" below)
 
-The core comes first: new meters and measures wait until items 1–19 are done.
+The core comes first: new meters and measures wait until items 1–11 are done.
 
 ---
 
@@ -39,11 +31,13 @@ The core comes first: new meters and measures wait until items 1–19 are done.
 - [x] `[Variables]`, including variables inside variables
 - [x] Nested variables `[#Var]` (in `[Variables]`, meter and measure options, and mouse actions)
 - [x] Built-in variables: `#@#`, `#CURRENTPATH#`, `#ROOTCONFIGPATH#`, `#SKINSPATH#`, `#CURRENTFILE#`, `#CURRENTSECTION#`
-- [ ] More built-in variables: `#CURRENTCONFIG#`, `#SCREENAREAWIDTH#`/`HEIGHT#`, `#WORKAREA…#`, `#PROGRAMPATH#`, `#SETTINGSPATH#`
+- [x] More built-in variables: `#CURRENTCONFIG#`, `#SCREENAREAWIDTH#`/`HEIGHT#`, `#WORKAREA…#`, `#PROGRAMPATH#`, `#SETTINGSPATH#` (🟡 work area = whole screen for now; monitor numbers follow GTK, not Windows)
 - [x] `MeterStyle` (chained and multiple styles)
-- [ ] Faster style lookup with a HashMap
+- [x] Faster style lookup with a HashMap
 - [x] Section variables: `[Measure]`, `[Measure:MaxValue]`, `[Meter:X/Y/W/H/XW/YH]`
-- [ ] More section variables: `[Measure:%]`, `[Measure:/1000,2]`, `[&Measure:EscapeRegExp]`, and the like
+- [x] More section variables: `[Measure:%]`, `[Measure:/1000,2]`, `[Measure:MaxValue:/1024,1]`, `:TimeStamp`, `:EscapeRegExp`, `:EncodeUrl`, nested `[&Measure]` (in options and mouse actions)
+- [ ] Character references `[\1234]` and `[\x20AC]`
+- [ ] `[$Skin…]` and `[$Display…]` variables (skin position and size, monitors)
 - [x] `DynamicVariables=1` (meters and measures)
 - [x] The formula language (operators, functions, `pi`/`e`, `0b`/`0o`/hex numbers)
 
@@ -54,7 +48,7 @@ The core comes first: new meters and measures wait until items 1–19 are done.
 - [x] Drag the skin around
 - [ ] Remember each skin's position and settings (Rainmeter.ini)
 - [ ] Several skins at once
-- [ ] Load, unload and refresh skins
+- [x] Load, unload and refresh skins
 - [ ] Right-click menu
 - [ ] Tray icon
 - [ ] Always on top, on the desktop, normal
@@ -84,7 +78,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [ ] `OnRefreshAction`, `OnCloseAction`, `OnUpdateAction`, `OnFocusAction`/`OnUnfocusAction`
 - [ ] `ContextTitle` / `ContextAction`
 - [ ] `Group`
-- [ ] `LocalFont`
+- [x] `LocalFont`
 - [ ] `AccurateText`
 - [ ] `Blur` / `BlurRegion` (needs compositor support on Linux)
 
@@ -102,7 +96,9 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] Bangs: `!Refresh` (this skin only; reloads the file, restarts the timer, keeps the old skin on an error)
 - [ ] Bangs: `!UpdateMeter`, `!UpdateMeasure`
 - [ ] Bangs: `!EnableMeasure`, `!DisableMeasure`, `!PauseMeasure`, `!CommandMeasure`
-- [ ] Bangs: `!Move`, `!ActivateConfig`, `!DeactivateConfig`
+- [ ] Bangs: `!Move`
+- [x] Bangs: `!ActivateConfig`, `!DeactivateConfig`, `!ToggleConfig`
+- [x] Bangs aimed at other skins: an extra config argument, or `*` for all (Rainmeter's DoBang rule)
 - [ ] Running external programs from actions (`["program"]`)
 - [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction`
 - [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
@@ -161,6 +157,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] `StringCase` (rules checked against Windows' LCMapString)
 - [ ] `StringEffect` / `FontEffectColor`
 - [ ] `ClipString` / `ClipStringW` / `ClipStringH`
+- [ ] Multi-line text (`#CRLF#`, line breaks from measures)
 - [ ] `FontWeight`
 - [ ] `Angle`
 - [ ] `NumOfDecimals`, `AutoScale`, `Scale`, `Percentual` (reverted earlier)

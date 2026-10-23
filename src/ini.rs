@@ -142,13 +142,29 @@ const MAX_NESTED_SPAN: usize = 1024;
 // so [#Color[#N]] reads [#N] first. [#*Name*] is an escape: it becomes the text [#Name].
 // Unknown names, and other brackets such as [Measure] or [!Bang], stay as written.
 pub fn resolve_nested(text: &str, vars: &HashMap<String, String>) -> String {
+    resolve_nested_with(text, vars, &|_| None)
+}
+
+// Like resolve_nested, and also [&Name], Rainmeter's nested section variable:
+// `section` gives the value of "Name" (or "Name:params"), or None if it's unknown.
+// Both kinds are done in the same pass, so [#Color[&Index]] and [&Measure[#N]] work.
+pub fn resolve_nested_with(
+    text: &str,
+    vars: &HashMap<String, String>,
+    section: &dyn Fn(&str) -> Option<String>,
+) -> String {
     let mut s = text.to_string();
-    resolve_nested_in(&mut s, vars, 0);
+    resolve_nested_in(&mut s, vars, section, 0);
     truncate_to_cap(&mut s);
     s
 }
 
-fn resolve_nested_in(s: &mut String, vars: &HashMap<String, String>, depth: usize) {
+fn resolve_nested_in(
+    s: &mut String,
+    vars: &HashMap<String, String>,
+    section: &dyn Fn(&str) -> Option<String>,
+    depth: usize,
+) {
     let mut from = 0; // where to look for the next ']'
     while let Some(offset) = s[from..].find(']') {
         if s.len() > MAX_RESOLVED_LEN {
@@ -169,7 +185,12 @@ fn resolve_nested_in(s: &mut String, vars: &HashMap<String, String>, depth: usiz
             if inner.len() < 2 {
                 break; // "[]" or "[#]": nothing to look up
             }
-            let Some(name) = inner.strip_prefix('#') else { continue }; // try an earlier [
+            // The key: '#' for a variable, '&' for a section variable. Else try an earlier [
+            let is_var = inner.starts_with('#');
+            if !is_var && !inner.starts_with('&') {
+                continue;
+            }
+            let name = &inner[1..];
             if name.len() >= 2 && name.starts_with('*') && name.ends_with('*') {
                 // [#*Name*] → [#Name]: drop the two stars (the later one first,
                 // so the earlier index is still right)
@@ -178,10 +199,11 @@ fn resolve_nested_in(s: &mut String, vars: &HashMap<String, String>, depth: usiz
                 next = end - 1; // the ']' moved two places left
                 break;
             }
-            if let Some(v) = vars.get(&name.to_lowercase()) {
-                let mut value = v.clone();
+            let found = if is_var { vars.get(&name.to_lowercase()).cloned() } else { section(name) };
+            if let Some(mut value) = found {
                 if depth < MAX_NESTED_DEPTH {
-                    resolve_nested_in(&mut value, vars, depth + 1); // the value may hold [#…] too
+                    // the value may hold [#…] or [&…] too
+                    resolve_nested_in(&mut value, vars, section, depth + 1);
                 }
                 s.replace_range(start..=end, &value);
                 next = start + value.len(); // carry on right after the inserted value

@@ -7,6 +7,7 @@ pub struct Sample {
     pub min: f64,
     pub max: f64,
     pub text: String, // the string value, what [MeasureName] expands to
+    pub timestamp: Option<f64>, // Time measures only, for [MeasureName:TimeStamp]
 }
 
 // Keys are lowercase measure names
@@ -49,6 +50,11 @@ pub trait Measure {
     // Default implementation: measures can override it
     fn text(&self) -> String {
         format!("{:.1}", self.value())
+    }
+
+    // Rainmeter's timestamp (seconds since 1601), for [Measure:TimeStamp]. Only Time has one.
+    fn timestamp(&self) -> Option<f64> {
+        None
     }
 }
 
@@ -135,20 +141,26 @@ impl Measure for Ranged {
     fn text(&self) -> String {
         self.inner.text()
     }
+
+    fn timestamp(&self) -> Option<f64> {
+        self.inner.timestamp()
+    }
 }
 
 fn sample_of(m: &dyn Measure) -> Sample {
     let (min, max) = m.range();
-    Sample { value: m.value(), min, max, text: m.text() }
+    Sample { value: m.value(), min, max, text: m.text(), timestamp: m.timestamp() }
 }
 
 // Updates every measure in order, like Rainmeter does, and returns everyone's fresh values
+// Every measure's values as they are now, without updating anything
+pub fn current_values(measures: &[Box<dyn Measure>]) -> Values {
+    measures.iter().map(|m| (m.name().to_lowercase(), sample_of(&**m))).collect()
+}
+
 pub fn update_all(measures: &mut [Box<dyn Measure>]) -> Values {
     // Start from each measure's current (old) value, so a Calc can read a measure defined below it
-    let mut values: Values = HashMap::new();
-    for m in measures.iter() {
-        values.insert(m.name().to_lowercase(), sample_of(&**m));
-    }
+    let mut values = current_values(measures);
     // Then update in order: each fresh value replaces the old one for the measures after it
     for m in measures.iter_mut() {
         m.update_with(&values);

@@ -82,20 +82,39 @@ pub fn expand_with(text: &str, values: &Values, geom: &Geometry) -> String {
     out
 }
 
-// What "Name" or "Name:params" turns into, or None if it isn't a measure or meter we know
+// For [&Name] outside meter and measure options (mouse actions)
+pub fn lookup_section(inner: &str, values: &Values, geom: &Geometry) -> Option<String> {
+    lookup(inner, values, geom)
+}
+
+// What "Name" or "Name:params" turns into, or None if it isn't a measure or meter we know.
+// Like Rainmeter, the parameters start after the *last* colon, so in
+// [Name:MaxValue:/1024,1] the name part is "Name:MaxValue".
 fn lookup(inner: &str, values: &Values, geom: &Geometry) -> Option<String> {
-    let (name, params) = match inner.split_once(':') {
+    let (name, params) = match inner.rsplit_once(':') {
         Some((n, p)) => (n, Some(p)),
         None => (inner, None),
     };
     let key = name.trim().to_lowercase();
     if let Some(sample) = values.get(&key) {
-        return measure_value(sample, params);
+        return measure_value(sample, Base::Value, params);
     }
     if let Some(rect) = geom.get(&key) {
         return meter_value(rect, params);
     }
-    None
+    // [Name:MaxValue:/scale,dec] and [Name:MinValue:...]. Only for parameters that
+    // don't start with a letter, as in Rainmeter ([Name:MaxValue:MaxValue] isn't valid).
+    let params = params?;
+    if params.starts_with(|c: char| c.is_alphabetic()) {
+        return None;
+    }
+    let (name, keyword) = key.rsplit_once(':')?;
+    let base = match keyword {
+        "maxvalue" => Base::Max,
+        "minvalue" => Base::Min,
+        _ => return None,
+    };
+    measure_value(values.get(name.trim())?, base, Some(params))
 }
 
 // [MeterName:X], :Y, :W, :H, :XW, :YH. A meter has no value without a parameter.
@@ -113,51 +132,104 @@ fn meter_value(rect: &Rect, params: Option<&str>) -> Option<String> {
     Some(format!("{}", number.round() as i64))
 }
 
-fn measure_value(sample: &Sample, params: Option<&str>) -> Option<String> {
+// Follows Rainmeter's GetSectionVariable. The parameters are one of:
+//   (empty) or dec   the number, with dec decimals
+//   %[,dec]          percent of the range (not with MaxValue/MinValue)
+//   /scale[,dec]     the number divided by scale
+//   MaxValue / MinValue
+// Anything else returns None, so the text is left as written.
+fn measure_value(sample: &Sample, mut base: Base, params: Option<&str>) -> Option<String> {
     // No parameters: the measure's string value
     let Some(params) = params else {
         return Some(sample.text.clone());
     };
 
-    let mut base = Base::Value;
-    let mut percent = false;
-    let mut divisor: Option<f64> = None;
-    let mut decimals: Option<usize> = None;
-    for token in params.split(',') {
-        let t = token.trim();
-        if t.is_empty() {
-            continue; // "[Name:]" means the number value
-        } else if t == "%" {
-            percent = true;
-        } else if let Some(n) = t.strip_prefix('/') {
-            let d = n.trim().parse::<u32>().ok().filter(|&d| d > 0)?;
-            divisor = Some(f64::from(d));
-        } else if t.eq_ignore_ascii_case("minvalue") {
-            base = Base::Min;
-        } else if t.eq_ignore_ascii_case("maxvalue") {
-            base = Base::Max;
-        } else if let Ok(d) = t.parse::<usize>() {
-            decimals = Some(d.min(10));
-        } else {
-            return None; // a parameter we don't support: leave the text alone
-        }
+    // [Name:MaxValue], [Name:MinValue], [Name:TimeStamp]: nothing may follow the keyword
+    let mut rest = params;
+    if params.starts_with(|c: char| c.is_alphabetic()) {
+        base = match params.to_lowercase().as_str() {
+            "maxvalue" => Base::Max,
+            "minvalue" => Base::Min,
+            // Time measures only, always a whole number of seconds since 1601
+            "timestamp" => return sample.timestamp.map(|t| format!("{}", t as i64)),
+            "escaperegexp" => return Some(escape_regexp(&sample.text)),
+            "encodeurl" => return Some(encode_url(&sample.text)),
+            _ => return None,
+        };
+        rest = "";
     }
 
-    let mut number = match base {
-        Base::Min => sample.min,
-        Base::Max => sample.max,
-        Base::Value => {
-            if percent {
-                fraction_in(sample.value, sample.min, sample.max) * 100.0
-            } else {
-                sample.value
-            }
+    let has_decimals = rest.contains(',');
+    let mut percent = false;
+    let mut scale = 1.0;
+    let decimals_text = if let Some(after) = rest.strip_prefix('%') {
+        if !matches!(base, Base::Value) {
+            return None; // '%' can't be used with MaxValue/MinValue
         }
+        percent = true;
+        has_decimals.then(|| after.split_once(',').map_or("", |(_, d)| d))
+    } else if let Some(after) = rest.strip_prefix('/') {
+        scale = f64::from(leading_int(after).filter(|&s| s != 0)?);
+        has_decimals.then(|| after.split_once(',').map_or("", |(_, d)| d))
+    } else {
+        if has_decimals {
+            return None; // [Name:,2] and [Name:2,2] aren't valid
+        }
+        Some(rest)
     };
-    if let Some(d) = divisor {
-        number /= d;
-    }
+    // Decimals given: exactly that many (0-32). Not given: trailing zeros are removed.
+    let decimals = decimals_text
+        .map(str::trim_start)
+        .filter(|d| !d.is_empty())
+        .map(|d| leading_int(d).unwrap_or(0).clamp(0, 32) as usize);
+
+    let number = match base {
+        Base::Max => sample.max / scale,
+        Base::Min => sample.min / scale,
+        Base::Value if percent => fraction_in(sample.value, sample.min, sample.max) * 100.0,
+        Base::Value => sample.value / scale,
+    };
     Some(format_decimals(number, decimals))
+}
+
+// [Measure:EscapeRegExp]: a '\' before each character that means something in a regular
+// expression. Like Rainmeter, ']' and '}' are left alone.
+fn escape_regexp(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if "\\^$|()[{.+*?".contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+// [Measure:EncodeUrl]: every UTF-8 byte except 0-9 A-Z a-z - . _ ~ becomes %XX
+fn encode_url(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for &b in s.as_bytes() {
+        if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+            out.push(char::from(b));
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+// The whole number at the start of `s`, the way C's wcstol reads it:
+// spaces skipped, an optional sign, then digits. Anything after them is ignored.
+fn leading_int(s: &str) -> Option<i32> {
+    let s = s.trim_start();
+    let sign_len = usize::from(s.starts_with(['+', '-']));
+    let digits = s[sign_len..].chars().take_while(char::is_ascii_digit).count();
+    if digits == 0 {
+        return None;
+    }
+    // Too many digits for an i32: wcstol gives the largest value, so do the same
+    let text = &s[..sign_len + digits];
+    Some(text.parse().unwrap_or(if text.starts_with('-') { i32::MIN } else { i32::MAX }))
 }
 
 // With a count: exactly that many decimals. Without: up to ten, trailing zeros removed.
@@ -181,7 +253,8 @@ fn format_decimals(v: f64, decimals: Option<usize>) -> String {
 
 // Expands the section variables in every option value of a section.
 // #Variables# are resolved first, as in Rainmeter, so [#Name:#Digits#]-style mixes work.
-// Then nested [#Variables], so [Measure[#N]] names a measure by the time it's looked up.
+// Then nested [#Variables] and [&Measures], so [Measure[#N]] names a measure by the time
+// it's looked up.
 pub fn expand_options(
     options: &HashMap<String, String>,
     vars: &HashMap<String, String>,
@@ -192,7 +265,10 @@ pub fn expand_options(
         .iter()
         .map(|(k, v)| {
             let value = if v.contains('[') {
-                expand_with(&ini::resolve_nested(&ini::resolve(v, vars), vars), values, geom)
+                let nested = ini::resolve_nested_with(&ini::resolve(v, vars), vars, &|name| {
+                    lookup(name, values, geom)
+                });
+                expand_with(&nested, values, geom)
             } else {
                 v.clone()
             };
@@ -209,11 +285,11 @@ mod tests {
         let mut v = Values::new();
         v.insert(
             "a".to_string(),
-            Sample { value: 12.6, min: 0.0, max: 100.0, text: "text_a".to_string() },
+            Sample { value: 12.6, min: 0.0, max: 100.0, text: "text_a".to_string(), timestamp: None },
         );
         v.insert(
             "b".to_string(),
-            Sample { value: 50.0, min: 0.0, max: 200.0, text: "b".to_string() },
+            Sample { value: 50.0, min: 0.0, max: 200.0, text: "b".to_string(), timestamp: None },
         );
         v
     }
@@ -232,6 +308,50 @@ mod tests {
     }
 
     #[test]
+    fn timestamp_only_for_time_measures() {
+        let mut v = sample_values();
+        v.insert(
+            "clock".to_string(),
+            Sample { value: 14.0, min: 0.0, max: 1.0, text: "14".to_string(), timestamp: Some(13_400_000_000.0) },
+        );
+        assert_eq!(expand("[Clock:TimeStamp]", &v), "13400000000");
+        assert_eq!(expand("[clock:timestamp]", &v), "13400000000");
+        // Not a Time measure, or something after the keyword: left as written
+        assert_eq!(expand("[a:TimeStamp]", &v), "[a:TimeStamp]");
+        assert_eq!(expand("[clock:TimeStamp,2]", &v), "[clock:TimeStamp,2]");
+    }
+
+    #[test]
+    fn escape_and_encode() {
+        assert_eq!(escape_regexp("1.5 (max)"), r"1\.5 \(max\)");
+        assert_eq!(escape_regexp(r"\^$|()[]{}.+*?"), r"\\\^\$\|\(\)\[]\{}\.\+\*\?");
+        assert_eq!(encode_url("a b"), "a%20b");
+        assert_eq!(encode_url("é"), "%C3%A9");
+        assert_eq!(encode_url("Az09-._~/?&="), "Az09-._~%2F%3F%26%3D");
+        // Through a section variable, on the measure's text
+        let v = sample_values();
+        assert_eq!(expand("[a:EscapeRegExp]", &v), "text_a");
+        assert_eq!(expand("[a:encodeurl]", &v), "text_a");
+        assert_eq!(expand("[a:EncodeUrl,1]", &v), "[a:EncodeUrl,1]");
+    }
+
+    #[test]
+    fn rainmeter_grammar() {
+        let v = sample_values();
+        // MaxValue/MinValue with a scale go before the last colon
+        assert_eq!(expand("[a:MaxValue:/2,1]", &v), "50.0");
+        assert_eq!(expand("[b:minvalue:/2]", &v), "0");
+        assert_eq!(expand("[b:%,1]", &v), "25.0");
+        assert_eq!(expand("[a:/-2]", &v), "-6.3");
+        // Spaces before a number are skipped, as C's wcstol does
+        assert_eq!(expand("[a: 2]", &v), "12.60");
+        // Forms Rainmeter rejects are left as written
+        for bad in ["[a:MaxValue:%]", "[a:,2]", "[a:2,2]", "[a:/0]", "[a:/x]", "[a:MaxValue:MaxValue]"] {
+            assert_eq!(expand(bad, &v), bad);
+        }
+    }
+
+    #[test]
     fn works_inside_other_text() {
         let v = sample_values();
         assert_eq!(expand("X=([a:] * 2)", &v), "X=(12.6 * 2)");
@@ -246,6 +366,29 @@ mod tests {
         assert_eq!(expand("[a:bogus]", &v), "[a:bogus]");
         assert_eq!(expand("[a", &v), "[a");
         assert_eq!(expand("no brackets", &v), "no brackets");
+    }
+
+    #[test]
+    fn nested_section_variables() {
+        let v = sample_values();
+        let mut g = Geometry::new();
+        g.insert("box".to_string(), Rect { x: 10.0, y: 20.0, w: 100.0, h: 30.0 });
+        let mut vars = HashMap::new();
+        vars.insert("n".to_string(), "a".to_string());
+        vars.insert("colorb".to_string(), "red".to_string());
+        let expand_one = |text: &str| {
+            let options = HashMap::from([("text".to_string(), text.to_string())]);
+            expand_options(&options, &vars, &v, &g)["text"].clone()
+        };
+        assert_eq!(expand_one("[&a]"), "text_a");
+        assert_eq!(expand_one("[&a:1]"), "12.6");
+        assert_eq!(expand_one("[&Box:X]"), "10");
+        // A measure picks the variable, and a variable picks the measure
+        assert_eq!(expand_one("[#Color[&b]]"), "red");
+        assert_eq!(expand_one("[&[#N]]"), "text_a");
+        // Unknown names stay, and the escape gives the text back
+        assert_eq!(expand_one("[&Nope]"), "[&Nope]");
+        assert_eq!(expand_one("[&*a*]"), "[&a]");
     }
 
     #[test]

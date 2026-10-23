@@ -208,7 +208,13 @@ pub fn resolve_skin(arg: &str, root: &Path) -> Result<PathBuf, String> {
             .map_err(|e| format!("Cannot resolve {}: {}", arg, e));
     }
 
-    // 2. A name inside the skins folder: Config\Skin\File.ini, any capitalization
+    // 2. A name inside the skins folder
+    find_in_skins(arg, root)
+}
+
+// A skin file inside the skins folder: Config\Skin\File.ini, any capitalization.
+// Never anything outside it, so skins' own bangs can use this safely.
+pub fn find_in_skins(arg: &str, root: &Path) -> Result<PathBuf, String> {
     let found = paths::find_file(root, arg)
         .ok_or_else(|| format!("Skin '{}' not found (looked in {})", arg, root.display()))?;
     let found = found

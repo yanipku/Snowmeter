@@ -10,6 +10,44 @@ pub enum After {
     Redraw, // !Redraw: paint the skin as it is now
     Update, // !Update: a full update straight away, then paint
     Refresh, // !Refresh: read the skin file again from scratch
+    Config(ConfigBang), // a bang that loads or unloads skins: only the manager can do it
+}
+
+// !ActivateConfig, !DeactivateConfig, !ToggleConfig
+#[derive(Debug, PartialEq)]
+pub enum ConfigBang {
+    Activate { config: String, file: Option<String> },
+    Deactivate { config: Option<String> }, // None: this skin; "*": every skin
+    Toggle { config: String, file: Option<String> },
+}
+
+// Which skin a bang runs on
+#[derive(Debug, PartialEq)]
+pub enum Target {
+    This,           // the skin whose action it is
+    Config(String), // the skin of another config, like illustro\Clock
+    All,            // every running skin
+}
+
+// How many arguments each bang takes. One more is the config to run it on, and
+// "*" or "" means all skins (Rainmeter's DoBang). None: a bang we don't know yet.
+fn arg_count(bang: &str) -> Option<usize> {
+    match bang {
+        "redraw" | "update" | "refresh" => Some(0),
+        "showmeter" | "hidemeter" | "togglemeter" => Some(1),
+        "setvariable" => Some(2),
+        _ => None,
+    }
+}
+
+pub fn target(cmd: &str) -> Target {
+    let Some((name, args)) = parse_bang(cmd) else { return Target::This };
+    let Some(count) = arg_count(&name.to_ascii_lowercase()) else { return Target::This };
+    match args.get(count).map(String::as_str) {
+        None => Target::This,
+        Some("" | "*") => Target::All,
+        Some(config) => Target::Config(config.to_string()),
+    }
 }
 
 // Runs one command from an action. Only a few bangs are supported so far;
@@ -55,12 +93,21 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
         }
         "redraw" => After::Redraw,
         "update" => After::Update,
-        "refresh" => {
-            // Only one skin runs for now, so a config name can only mean this one
-            if let Some(config) = args.first() {
-                println!("!Refresh {config}: other skins aren't supported yet, refreshing this one");
+        "refresh" => After::Refresh,
+        "activateconfig" | "toggleconfig" => {
+            let Some(config) = args.first().cloned() else {
+                eprintln!("!{name}: Invalid parameters");
+                return After::Nothing;
+            };
+            let file = args.get(1).cloned();
+            if lower == "activateconfig" {
+                After::Config(ConfigBang::Activate { config, file })
+            } else {
+                After::Config(ConfigBang::Toggle { config, file })
             }
-            After::Refresh
+        }
+        "deactivateconfig" => {
+            After::Config(ConfigBang::Deactivate { config: args.first().cloned() })
         }
         _ => {
             println!("!{name} isn't supported yet");
@@ -202,6 +249,34 @@ fn variable_value(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_bangs() {
+        let bang = |cmd: &str| parse_bang(cmd).map(|(n, a)| (n.to_ascii_lowercase(), a));
+        // Parsed the way execute() reads them
+        assert_eq!(
+            bang(r#"!ActivateConfig "illustro\Clock" "Clock.ini""#),
+            Some(("activateconfig".to_string(), vec![r"illustro\Clock".to_string(), "Clock.ini".to_string()]))
+        );
+        assert_eq!(target(r#"!DeactivateConfig "illustro\Clock""#), Target::This);
+    }
+
+    #[test]
+    fn bang_targets() {
+        let config = |c: &str| Target::Config(c.to_string());
+        assert_eq!(target("!Refresh"), Target::This);
+        assert_eq!(target(r#"!Refresh "illustro\Clock""#), config(r"illustro\Clock"));
+        assert_eq!(target("!Refresh *"), Target::All);
+        assert_eq!(target(r#"!Refresh """#), Target::All);
+        assert_eq!(target("!ShowMeter Graph"), Target::This);
+        assert_eq!(target("!ShowMeter Graph Other"), config("Other"));
+        assert_eq!(target("!SetVariable N 1"), Target::This);
+        assert_eq!(target("!SetVariable N 1 *"), Target::All);
+        assert_eq!(target("!RainmeterHideMeter Graph Other"), config("Other"));
+        // Bangs we don't know yet, and programs, stay on this skin
+        assert_eq!(target("!Log hi Other"), Target::This);
+        assert_eq!(target("notepad.exe"), Target::This);
+    }
 
     #[test]
     fn set_variable_values() {

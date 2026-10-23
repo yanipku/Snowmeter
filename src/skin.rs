@@ -2,7 +2,7 @@ use crate::ini;
 use crate::measure::{Measure, Ranged};
 use crate::meter::{self, Color, Layout, Meter};
 use crate::mouse::{MouseActions, MouseEvent};
-use crate::{calc, clock, cpu, formula, memory};
+use crate::{calc, clock, cpu, fonts, formula, memory};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -21,8 +21,10 @@ pub struct Skin {
     pub dynamic_window: bool, // DynamicWindowSize=1
     pub mouse: MouseActions,  // mouse actions of [Rainmeter], for clicks no meter takes
     pub vars: HashMap<String, String>, // the variable table, kept so !SetVariable can change it
-    pub file: PathBuf,       // the skin's .ini and the skins folder: what load() needs
-    pub skins_root: PathBuf, // to read the skin again for !Refresh
+    pub file: PathBuf,         // the skin's .ini, the skins folder and the settings folder:
+    pub skins_root: PathBuf,   // what load() needs to read the skin again for !Refresh
+    pub settings_dir: PathBuf,
+    pub config: String, // the config name, like illustro\Clock (#CURRENTCONFIG#)
 }
 
 impl Skin {
@@ -32,13 +34,23 @@ impl Skin {
         meter::action_at(&self.meters, &self.mouse, &self.measures, x, y, event)
     }
 
-    // Fills in [#Var] in an action just before it runs, so it sees the latest
-    // !SetVariable. `section` is the action's own section, for [#CURRENTSECTION].
+    // Fills in [#Var] and [&Measure] in an action just before it runs, so it sees the latest
+    // !SetVariable and the values of that moment. `section` is the action's own section,
+    // for [#CURRENTSECTION].
     pub fn expand_action(&self, section: &str, text: &str) -> String {
-        if !text.contains("[#") {
+        let has_sections = text.contains("[&");
+        if !has_sections && !text.contains("[#") {
             return text.to_string(); // the usual case: no copy of the variable table
         }
-        ini::resolve_nested(text, &section_vars(&self.vars, section))
+        let vars = section_vars(&self.vars, section);
+        if !has_sections {
+            return ini::resolve_nested(text, &vars);
+        }
+        let values = crate::measure::current_values(&self.measures);
+        let geom = Layout::geometry_of(&self.meters, &self.measures);
+        ini::resolve_nested_with(text, &vars, &|name| {
+            crate::sectionvar::lookup_section(name, &values, &geom)
+        })
     }
 
     // The meter called `name`, for bangs like !HideMeter. Names ignore case, as in Rainmeter.
@@ -94,11 +106,21 @@ fn section_vars(vars: &HashMap<String, String>, name: &str) -> HashMap<String, S
     own
 }
 
+// Every section by lowercase name, built once so MeterStyle lookups don't scan the file.
+// If a name appears twice, the first one wins.
+fn section_index(all: &[ini::Section]) -> HashMap<String, &ini::Section> {
+    let mut index = HashMap::new();
+    for s in all {
+        index.entry(s.name.to_lowercase()).or_insert(s);
+    }
+    index
+}
+
 // MeterStyle=Parent1|Parent2: builds the meter's full set of options.
 // Later parents beat earlier ones, and the meter's own options beat them all.
 fn apply_meter_styles(
     section: &ini::Section,
-    all: &[ini::Section],
+    index: &HashMap<String, &ini::Section>,
     vars: &HashMap<String, String>,
 ) -> ini::Section {
     let mut options: HashMap<String, String> = HashMap::new();
@@ -109,7 +131,7 @@ fn apply_meter_styles(
         // by_ref(): take() uses up only the first MAX_STYLES names and leaves the rest
         // in `names`, so they can be counted below without ever being stored
         for name in names.by_ref().take(MAX_STYLES) {
-            let Some(parent) = all.iter().find(|s| s.name.eq_ignore_ascii_case(name)) else {
+            let Some(parent) = index.get(&name.to_lowercase()) else {
                 eprintln!("[{}] MeterStyle '{}' not found, ignoring it", section.name, name);
                 continue;
             };
@@ -149,7 +171,7 @@ fn apply_meter_styles(
 }
 
 // Both paths must be absolute (canonical), so the folder math below is reliable
-pub fn load(skin_file: &Path, skins_root: &Path) -> Result<Skin, String> {
+pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<Skin, String> {
     // Folder of this .ini; images and other files are looked up relative to it
     let base_dir = skin_file.parent().unwrap_or(Path::new("/")).to_path_buf();
 
@@ -181,6 +203,33 @@ pub fn load(skin_file: &Path, skins_root: &Path) -> Result<Skin, String> {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default(),
     );
+
+    // Config names use backslashes as on Windows (illustro\Clock), since skins pass them to bangs
+    let config_name = |p: &Path| match p.strip_prefix(skins_root) {
+        Ok(rel) if !rel.as_os_str().is_empty() => rel.to_string_lossy().replace('/', "\\"),
+        _ => p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+    };
+    let config = config_name(&base_dir);
+    builtin.insert("currentconfig".to_string(), config.clone());
+    builtin.insert("rootconfig".to_string(), config_name(&root_config));
+    builtin.insert("settingspath".to_string(), dir(settings_dir));
+    builtin.insert("addonspath".to_string(), dir(&settings_dir.join("Addons")));
+    // The program's folder; Rainmeter keeps plugins in a Plugins folder beside it
+    let program_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+        .unwrap_or_default();
+    builtin.insert("programpath".to_string(), dir(&program_dir));
+    builtin.insert("pluginspath".to_string(), dir(&program_dir.join("Plugins")));
+    builtin.insert("programdrive".to_string(), "/".to_string()); // Linux has no drive letters
+    builtin.insert("crlf".to_string(), "\n".to_string());
+    // The user's preferred editor, looked up the way Linux programs do
+    let editor = ["VISUAL", "EDITOR"]
+        .iter()
+        .find_map(|v| std::env::var(v).ok().filter(|e| !e.is_empty()))
+        .unwrap_or_else(|| "xdg-open".to_string());
+    builtin.insert("configeditor".to_string(), editor);
+    builtin.extend(crate::monitors::screen_vars());
 
     // Read the skin and everything it @Includes (include files must live in the root config)
     let ini = ini::load_with_includes(skin_file, &builtin, &base_dir, &root_config)?;
@@ -217,7 +266,7 @@ pub fn load(skin_file: &Path, skins_root: &Path) -> Result<Skin, String> {
                     .options
                     .get("format")
                     .map(|v| ini::resolve(v, &vars))
-                    .unwrap_or_else(|| "%H:%M:%S".to_string());
+                    .unwrap_or_default(); // empty: the clock uses its default text, and its value is a timestamp
                 let tz = section
                     .options
                     .get("timezone")
@@ -279,10 +328,17 @@ pub fn load(skin_file: &Path, skins_root: &Path) -> Result<Skin, String> {
     // Like Rainmeter, evaluate every measure once at load, so values exist from the start
     let values = crate::measure::update_all(&mut measures);
 
+    // Fonts must be loaded before the meters, which measure their text when built
+    let rm = ini.section("Rainmeter");
+    fonts::load_skin_fonts(&root_config.join("@Resources"), &base_dir, |key| {
+        rm.and_then(|s| s.options.get(key)).map(|v| ini::resolve(v, &vars))
+    });
+
     // Pass 2: meters, in order. Each is placed as soon as it is built, so [MeterName:X]
     // and relative positions (X=10R) can use the meters before it.
     let mut meters: Vec<Meter> = Vec::new();
     let mut layout = Layout::new();
+    let index = section_index(&ini.sections);
     for section in &ini.sections {
         // Only a section that says Meter= itself is a meter (a style section is just a style)
         if !section.options.contains_key("meter") {
@@ -290,7 +346,7 @@ pub fn load(skin_file: &Path, skins_root: &Path) -> Result<Skin, String> {
         }
         let vars = section_vars(&vars, &section.name);
         // MeterStyle=Parent1|Parent2: inherit options before the meter is built
-        let styled = apply_meter_styles(section, &ini.sections, &vars);
+        let styled = apply_meter_styles(section, &index, &vars);
         if let Some(mut m) =
             Meter::from_section(&styled, &vars, &measures, &values, layout.geometry(), &base_dir)
         {
@@ -300,7 +356,6 @@ pub fn load(skin_file: &Path, skins_root: &Path) -> Result<Skin, String> {
     }
 
     // [Rainmeter] section: Update, DynamicWindowSize, BackgroundMode=2 + SolidColor
-    let rm = ini.section("Rainmeter");
     let get = |key: &str| {
         rm.and_then(|s| s.options.get(key))
             .map(|v| ini::resolve(v, &vars))
@@ -332,6 +387,8 @@ pub fn load(skin_file: &Path, skins_root: &Path) -> Result<Skin, String> {
         vars,
         file: skin_file.to_path_buf(),
         skins_root: skins_root.to_path_buf(),
+        settings_dir: settings_dir.to_path_buf(),
+        config,
     })
 }
 
@@ -383,7 +440,7 @@ mod tests {
                 ],
             ),
         ];
-        let merged = apply_meter_styles(&all[2], &all, &no_vars());
+        let merged = apply_meter_styles(&all[2], &section_index(&all), &no_vars());
         assert_eq!(get(&merged, "stringstyle"), Some("Italic"));
         assert_eq!(get(&merged, "fontcolor"), Some("62,189,255"));
         assert_eq!(get(&merged, "x"), Some("0R"));
@@ -399,7 +456,7 @@ mod tests {
             section("Parent", &[("meterstyle", "Grand"), ("fontcolor", "1,2,3")]),
             section("Child", &[("meter", "String"), ("meterstyle", "Parent")]),
         ];
-        let merged = apply_meter_styles(&all[2], &all, &no_vars());
+        let merged = apply_meter_styles(&all[2], &section_index(&all), &no_vars());
         assert_eq!(get(&merged, "fontcolor"), Some("1,2,3"));
         assert_eq!(get(&merged, "fontsize"), None);
     }
@@ -414,7 +471,7 @@ mod tests {
                 &[("meter", "Bar"), ("meterstyle", "Variables|SomeMeasure|Nope|"), ("w", "5")],
             ),
         ];
-        let merged = apply_meter_styles(&all[2], &all, &no_vars());
+        let merged = apply_meter_styles(&all[2], &section_index(&all), &no_vars());
         assert_eq!(get(&merged, "secret"), None);
         assert_eq!(get(&merged, "format"), None);
         assert_eq!(get(&merged, "w"), Some("5"));
@@ -428,7 +485,7 @@ mod tests {
         ];
         let mut vars = no_vars();
         vars.insert("base".to_string(), "stylea".to_string());
-        let merged = apply_meter_styles(&all[1], &all, &vars);
+        let merged = apply_meter_styles(&all[1], &section_index(&all), &vars);
         assert_eq!(get(&merged, "fontsize"), Some("12"));
     }
 
@@ -449,7 +506,7 @@ mod tests {
         // Merge the styles, then resolve with the meter's own variables, as load() does
         let resolved = |child: &ini::Section, key: &str| {
             let vars = section_vars(&no_vars(), &child.name);
-            let merged = apply_meter_styles(child, &all, &vars);
+            let merged = apply_meter_styles(child, &section_index(&all), &vars);
             ini::resolve(get(&merged, key).unwrap(), &vars)
         };
         assert_eq!(resolved(&all[1], "text"), "Section: NoteA");
@@ -472,7 +529,7 @@ mod tests {
             .collect();
         let list: Vec<String> = (0..20).map(|i| format!("S{}", i)).collect();
         all.push(section("Child", &[("meter", "String"), ("meterstyle", &list.join("|"))]));
-        let merged = apply_meter_styles(all.last().unwrap(), &all, &no_vars());
+        let merged = apply_meter_styles(all.last().unwrap(), &section_index(&all), &no_vars());
         assert_eq!(get(&merged, "o15"), Some("1"));
         assert_eq!(get(&merged, "o16"), None);
     }

@@ -1052,6 +1052,11 @@ impl Layout {
         &self.geom
     }
 
+    // Where every meter is now, for [&Meter:X] in a mouse action
+    pub fn geometry_of(meters: &[Meter], measures: &[Box<dyn Measure>]) -> Geometry {
+        Layout::seeded(meters, measures).geom
+    }
+
     // Sets the meter's real x and y from its X and Y options and the previous meter
     pub fn place(&mut self, m: &mut Meter, measures: &[Box<dyn Measure>]) {
         let prev = self.prev;
