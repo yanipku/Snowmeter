@@ -25,6 +25,7 @@ The full checklist, compared with Rainmeter for Windows, is in [ROADMAP.md](ROAD
 - [ ] Several skins at once, remembered positions, right-click menu, tray icon
 - [ ] Number formatting (`NumOfDecimals`, `AutoScale`)
 - [ ] Disk, network and other measures; plugins; Lua scripts
+- [ ] Skin manager window
 - [ ] Installing `.rmskin` packages
 
 ## Building
