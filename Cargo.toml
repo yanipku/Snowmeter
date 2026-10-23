@@ -7,3 +7,6 @@ edition = "2024"
 chrono = "0.4.45"
 encoding_rs = "0.8.42"
 gtk4 = "0.11.5"
+# X11 only: window positions (Wayland doesn't let programs see or set them).
+# "xlib" loads libX11 at run time, so the program still starts without it.
+gdk4-x11 = { version = "0.11.5", features = ["xlib"] }

@@ -10,17 +10,14 @@ use gtk4::prelude::*;
 // available from GTK4 either, so for now it is the whole screen.
 //
 // Returns nothing when GTK isn't started (as in `cargo test`) or there is no monitor.
+//
+// Positions count from the primary's top-left corner, as on Windows, so the primary is
+// always at 0,0 and a monitor left of it has a negative X.
 pub fn screen_vars() -> Vec<(String, String)> {
-    if !gtk4::is_initialized() {
-        return Vec::new();
-    }
-    let Some(display) = gdk::Display::default() else {
-        return Vec::new();
-    };
-    let list = display.monitors();
-    let rects: Vec<gdk::Rectangle> = (0..list.n_items())
-        .filter_map(|i| list.item(i).and_downcast::<gdk::Monitor>())
-        .map(|m| m.geometry())
+    let (ox, oy) = origin();
+    let rects: Vec<gdk::Rectangle> = gtk_rects()
+        .iter()
+        .map(|r| gdk::Rectangle::new(r.x() - ox, r.y() - oy, r.width(), r.height()))
         .collect();
     let Some(primary) = rects.first() else {
         return Vec::new();
@@ -49,4 +46,27 @@ pub fn screen_vars() -> Vec<(String, String)> {
     }
     add("vscreenarea", "", &virtual_screen);
     vars
+}
+
+// Where the primary monitor's top-left corner is, in GTK's coordinates.
+// Windows counts positions from there, so we subtract it everywhere.
+// (0, 0) when GTK isn't started or there is no monitor.
+pub fn origin() -> (i32, i32) {
+    gtk_rects().first().map_or((0, 0), |r| (r.x(), r.y()))
+}
+
+// Every monitor's rectangle as GTK gives it (top-left of the whole desktop = 0,0).
+// Empty when GTK isn't started (as in `cargo test`) or there is no display.
+fn gtk_rects() -> Vec<gdk::Rectangle> {
+    if !gtk4::is_initialized() {
+        return Vec::new();
+    }
+    let Some(display) = gdk::Display::default() else {
+        return Vec::new();
+    };
+    let list = display.monitors();
+    (0..list.n_items())
+        .filter_map(|i| list.item(i).and_downcast::<gdk::Monitor>())
+        .map(|m| m.geometry())
+        .collect()
 }

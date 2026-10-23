@@ -6,16 +6,16 @@ Tick an item `[x]` when it's done. 🟡 in the text means the item is done in pa
 ## Progress compared with Rainmeter for Windows
 
 - Overall estimate: **10–15%**
-- Roadmap checklist: 49 / 150 ≈ **33%**
+- Roadmap checklist: 50 / 150 ≈ **33%**
 
 ## Next up
-1. [ ] Several skins at once (one process, one window per skin)
-2. [ ] Remember each skin's position and settings (our own Rainmeter.ini; Wayland limits window placement). Then shift monitor rectangles so the primary is at 0,0, as on Windows (GTK puts the top-left of all monitors at 0,0)
-3. [ ] Right-click menu
-4. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
-5. [ ] Click-through, Draggable, SnapEdges, KeepOnScreen
-6. [ ] The rest of the core bangs: `!SetOption`, `!EnableMeasure`/`!DisableMeasure`/`!PauseMeasure`, `!Move`
-7. [ ] `[Rainmeter]` actions: `OnRefreshAction`, `OnUpdateAction`, `OnCloseAction`, `OnFocusAction`/`OnUnfocusAction`
+1. [ ] Remember each skin's position and settings (our own Rainmeter.ini; Wayland limits window placement)
+2. [ ] Right-click menu
+3. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
+4. [ ] Click-through, Draggable, SnapEdges, KeepOnScreen
+5. [ ] The rest of the core bangs: `!SetOption`, `!EnableMeasure`/`!DisableMeasure`/`!PauseMeasure`, `!Move`
+6. [ ] `[Rainmeter]` actions: `OnRefreshAction`, `OnUpdateAction`, `OnCloseAction`, `OnFocusAction`/`OnUnfocusAction`
+7. [ ] The rest of the `[Rainmeter]` section: `Background` image with `BackgroundMode` 0/1/3/4 and `BackgroundMargins`, `SolidColor2`/`GradientAngle`, `BevelType`, `SkinWidth`/`SkinHeight`, `DragMargins`, `DefaultUpdateDivider`, `ContextTitle`/`ContextAction`, `Group`, `AccurateText`, `Blur`/`BlurRegion` (see "[Rainmeter] section" below)
 8. [ ] Running programs from actions (safely: launched directly, never through a shell)
 9. [ ] Tray icon (GNOME hides tray icons without an extension)
 10. [ ] Manage window: a GUI for Snowmeter outside the terminal, like Rainmeter's Manage dialog (see "Manage window" below)
@@ -31,7 +31,7 @@ The core comes first: new meters and measures wait until items 1–11 are done.
 - [x] `[Variables]`, including variables inside variables
 - [x] Nested variables `[#Var]` (in `[Variables]`, meter and measure options, and mouse actions)
 - [x] Built-in variables: `#@#`, `#CURRENTPATH#`, `#ROOTCONFIGPATH#`, `#SKINSPATH#`, `#CURRENTFILE#`, `#CURRENTSECTION#`
-- [x] More built-in variables: `#CURRENTCONFIG#`, `#SCREENAREAWIDTH#`/`HEIGHT#`, `#WORKAREA…#`, `#PROGRAMPATH#`, `#SETTINGSPATH#` (🟡 work area = whole screen for now; monitor numbers follow GTK, not Windows)
+- [x] More built-in variables: `#CURRENTCONFIG#`, `#SCREENAREAWIDTH#`/`HEIGHT#`, `#WORKAREA…#`, `#PROGRAMPATH#`, `#SETTINGSPATH#` (🟡 work area = whole screen for now; monitor numbers follow GTK, not Windows; positions count from the primary monitor, as on Windows, but a primary that is not the leftmost is untested — needs real multi-monitor Linux)
 - [x] `MeterStyle` (chained and multiple styles)
 - [x] Faster style lookup with a HashMap
 - [x] Section variables: `[Measure]`, `[Measure:MaxValue]`, `[Meter:X/Y/W/H/XW/YH]`
@@ -46,8 +46,9 @@ The core comes first: new meters and measures wait until items 1–11 are done.
 - [x] GTK4 window that redraws on the `Update` timer
 - [x] Transparent window with no border
 - [x] Drag the skin around
-- [ ] Remember each skin's position and settings (Rainmeter.ini)
-- [ ] Several skins at once
+- [ ] Remember each skin's position and settings (Rainmeter.ini) 🟡 `Active=` (no skin on the command line = last time's skins); `WindowX`/`WindowY` as plain numbers on X11 (saved 500 ms after a move, and on close/refresh). Still to do: Wayland (layer-shell), `%`/`R`/`B`/`@N` forms, the other settings
+  - Idea for GNOME (no layer-shell): one transparent window per monitor (`fullscreen_on_monitor`) with an input region covering only the skins, so clicks elsewhere pass through, and every skin drawn inside it at its own x,y. Costs: the window shows in Alt+Tab and the overview, all skins on a monitor stack together (no per-skin on top / on desktop), clicking a skin takes focus, no skin across two monitors, and GNOME treats fullscreen windows specially. To keep this open, skins should draw into a target with an offset instead of assuming they own a whole window.
+- [x] Several skins at once (several on the command line; one with an error is skipped)
 - [x] Load, unload and refresh skins
 - [ ] Right-click menu
 - [ ] Tray icon

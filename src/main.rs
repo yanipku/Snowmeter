@@ -16,16 +16,23 @@ mod textfile;
 mod calc;
 mod formula;
 mod sectionvar;
+mod x11pos;
 
 use gtk4::prelude::*;
 use gtk4::{glib, Application};
-use std::{cell::Cell, env, path::Path};
+use std::{
+    cell::Cell,
+    env,
+    path::{Path, PathBuf},
+};
 
-const USAGE: &str = "Usage: snowmeter [options] <skin>
+const USAGE: &str = "Usage: snowmeter [options] <skin> [<skin> ...]
 
   <skin>                   a path to an .ini file, or a name inside the skins
                            folder, such as Demo/Clock/Clock.ini
-                           (case and \\ or / don't matter)
+                           (case and \\ or / don't matter). Give several to
+                           run them together; one skin per config folder.
+                           With none, the skins that ran last time come back.
 
 Options:
   --list                   show the skins that were found
@@ -64,7 +71,7 @@ fn main() -> glib::ExitCode {
     let mut set_dir: Option<String> = None;
     let mut list_only = false;
     let mut show_help = false;
-    let mut skin_arg: Option<String> = None;
+    let mut skin_args: Vec<String> = Vec::new();
 
     let mut args = env::args().skip(1);
     while let Some(a) = args.next() {
@@ -79,7 +86,7 @@ fn main() -> glib::ExitCode {
                 Some(dir) => set_dir = Some(dir),
                 None => fail("--set-skins-dir needs a folder name"),
             },
-            _ => skin_arg = Some(a),
+            _ => skin_args.push(a),
         }
     }
 
@@ -98,32 +105,50 @@ fn main() -> glib::ExitCode {
     let (skins_dir, source) = config::resolve_skins_dir(skins_dir_arg, &cfg);
     let root = config::ensure_skins_dir(&skins_dir).unwrap_or_else(|e| fail(&e));
 
-    // No skin given (or --list / --help): show what's available and stop
-    let skin_arg = match skin_arg {
-        Some(s) if !list_only && !show_help => s,
-        _ => {
-            if !list_only {
-                println!("{}", USAGE);
-            }
-            print_skins(&root, source);
-            std::process::exit(0);
-        }
+    // The skins to run: the ones named on the command line, else the ones that were
+    // running last time (Active= in the settings file)
+    let files: Vec<(String, Result<PathBuf, String>)> = if skin_args.is_empty() {
+        config::active_skins(&cfg, &root)
+            .into_iter()
+            .map(|path| (path.display().to_string(), Ok(path)))
+            .collect()
+    } else {
+        skin_args.iter().map(|arg| (arg.clone(), config::resolve_skin(arg, &root))).collect()
     };
 
-    let skin_file = config::resolve_skin(&skin_arg, &root).unwrap_or_else(|e| fail(&e));
-    // Start GTK now, so loading the skin can read the monitors (#SCREENAREAWIDTH# and others)
+    // Nothing to run (or --list / --help): show what's available and stop
+    if files.is_empty() || list_only || show_help {
+        if !list_only {
+            println!("{}", USAGE);
+        }
+        print_skins(&root, source);
+        std::process::exit(0);
+    }
+
+    // Start GTK now, so loading the skins can read the monitors (#SCREENAREAWIDTH# and others)
     gtk4::init().unwrap_or_else(|e| fail(&format!("Can't start GTK: {e}")));
-    let skin = skin::load(&skin_file, &root, &cfg.dir).unwrap_or_else(|e| fail(&e));
+    // A skin with an error is reported and skipped, as Rainmeter does; the others still run
+    let mut skins = Vec::new();
+    for (name, file) in files {
+        match file.and_then(|file| skin::load(&file, &root, &cfg.dir)) {
+            Ok(skin) => skins.push(skin),
+            Err(e) => eprintln!("{name}: {e}"),
+        }
+    }
+    if skins.is_empty() {
+        fail("No skin could be loaded");
+    }
 
     let app = Application::builder()
         .application_id("org.example.snowmeter")
         .build();
-    let manager = manager::Manager::new(&app, &root, &cfg.dir);
+    let manager = manager::Manager::new(&app, &root, &cfg);
     // activate runs when the app starts. GTK wants a callback that may run more than
-    // once, so the skin sits in a Cell and take() hands it over the first time only.
-    let first_skin = Cell::new(Some(skin));
+    // once, so the skins sit in a Cell and take() hands them over the first time only
+    // (later calls get an empty list).
+    let first_skins = Cell::new(skins);
     app.connect_activate(move |_| {
-        if let Some(skin) = first_skin.take() {
+        for skin in first_skins.take() {
             manager.add(skin);
         }
     });

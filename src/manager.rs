@@ -1,7 +1,7 @@
 // The running skins: one window per config (a folder under Skins, like illustro\Clock),
 // as in Rainmeter, where at most one skin of each config runs at a time.
 use crate::action::{self, After, ConfigBang, Target};
-use crate::config;
+use crate::config::{self, Config};
 use crate::meter;
 use crate::mouse::{MouseEvent, Press};
 use crate::skin::{self, Skin};
@@ -15,8 +15,8 @@ use std::time::Duration;
 
 pub struct Manager {
     app: Application,
-    skins_root: PathBuf,   // the skins folder
-    settings_dir: PathBuf, // for #SETTINGSPATH# in skins loaded later
+    skins_root: PathBuf, // the skins folder
+    cfg: Config,         // the settings file, where Active= is saved; its folder is #SETTINGSPATH#
     // Keys are lowercase config names. The map holds the only strong reference to each
     // window's state; the window's own callbacks hold weak ones (see SkinWindow::open).
     skins: RefCell<HashMap<String, Rc<SkinWindow>>>,
@@ -28,11 +28,11 @@ fn config_key(config: &str) -> String {
 }
 
 impl Manager {
-    pub fn new(app: &Application, skins_root: &Path, settings_dir: &Path) -> Rc<Manager> {
+    pub fn new(app: &Application, skins_root: &Path, cfg: &Config) -> Rc<Manager> {
         Rc::new(Manager {
             app: app.clone(),
             skins_root: skins_root.to_path_buf(),
-            settings_dir: settings_dir.to_path_buf(),
+            cfg: cfg.clone(),
             skins: RefCell::new(HashMap::new()),
         })
     }
@@ -41,7 +41,15 @@ impl Manager {
     // `self: &Rc<Self>` lets the method hand the window a pointer back to the manager.
     pub fn add(self: &Rc<Self>, skin: Skin) {
         let key = config_key(&skin.config);
-        let window = SkinWindow::open(&self.app, skin, Rc::downgrade(self));
+        // Active=N, N counting from 1. A skin opened from outside the skins folder isn't
+        // in the list, so nothing is saved for it.
+        let name = skin.file.file_name().map(|n| n.to_string_lossy().to_lowercase());
+        let files = config::config_files(&self.skins_root, &skin.config);
+        if let Some(i) = files.iter().position(|f| Some(f.to_lowercase()) == name) {
+            self.save_active(&skin.config, i + 1);
+        }
+        let position = config::read_position(&self.cfg, &skin.config);
+        let window = SkinWindow::open(&self.app, skin, position, Rc::downgrade(self));
         // The new window opens before the old one closes, so GTK never sees zero windows
         let old = self.skins.borrow_mut().insert(key, window);
         if let Some(old) = old {
@@ -70,19 +78,29 @@ impl Manager {
                 return Ok(());
             }
         }
-        let skin = skin::load(&path, &self.skins_root, &self.settings_dir)?;
+        let skin = skin::load(&path, &self.skins_root, &self.cfg.dir)?;
         self.add(skin);
         Ok(())
     }
 
     // The first .ini directly inside a config folder, by name
     fn first_file(&self, config: &str) -> Option<String> {
-        let wanted = config_key(config);
-        config::list_skins(&self.skins_root).into_iter().find_map(|rel| {
-            let rel = rel.replace('/', "\\");
-            let (folder, file) = rel.rsplit_once('\\')?;
-            (folder.to_lowercase() == wanted).then(|| file.to_string())
-        })
+        config::config_files(&self.skins_root, config).into_iter().next()
+    }
+
+    // Remembers in the settings file which skin of a config runs (0 = none).
+    // A failure is only reported: the skin itself keeps running.
+    fn save_active(&self, config: &str, index: usize) {
+        if let Err(e) = config::save_active(&self.cfg, config, index) {
+            eprintln!("Can't save the loaded skins: {e}");
+        }
+    }
+
+    // Remembers where a config's window is (WindowX=, WindowY=)
+    fn save_position(&self, config: &str, x: i32, y: i32) {
+        if let Err(e) = config::save_position(&self.cfg, config, x, y) {
+            eprintln!("Can't save the skin's position: {e}");
+        }
     }
 
     // Closes a config's skin, if it runs. Dropping the last Rc frees everything; when no
@@ -90,6 +108,9 @@ impl Manager {
     fn deactivate(&self, config: &str) {
         let removed = self.skins.borrow_mut().remove(&config_key(config));
         if let Some(sw) = removed {
+            // The section name from the skin itself, with its real capitalization
+            let name = sw.skin.borrow().config.clone();
+            self.save_active(&name, 0);
             sw.close();
         }
     }
@@ -150,13 +171,23 @@ struct SkinWindow {
     timer: RefCell<Option<glib::SourceId>>,
     // Set while the skin is being moved, so letting go of it isn't a click (Rainmeter's m_Dragged)
     dragged: Cell<bool>,
+    // The short wait after a move before saving the position (see position_changed)
+    save_timer: RefCell<Option<glib::SourceId>>,
+    // The position last saved or loaded, so a resize alone doesn't write the file
+    saved_position: Cell<Option<(i32, i32)>>,
 }
 
 impl SkinWindow {
     // Rc::new_cyclic hands us a Weak pointer to the SkinWindow before it exists, so the
     // callbacks can be built with it. They hold Weak, not Rc: the window owns its callbacks,
     // so a strong pointer back would be a loop that is never freed.
-    fn open(app: &Application, skin: Skin, manager: Weak<Manager>) -> Rc<SkinWindow> {
+    // `position` is the saved WindowX/WindowY, if any.
+    fn open(
+        app: &Application,
+        skin: Skin,
+        position: Option<(i32, i32)>,
+        manager: Weak<Manager>,
+    ) -> Rc<SkinWindow> {
         let (width, height) = (skin.width, skin.height);
         let area = DrawingArea::builder().content_width(width).content_height(height).build();
         let window = ApplicationWindow::builder()
@@ -188,9 +219,19 @@ impl SkinWindow {
                 area: area.clone(),
                 timer: RefCell::new(None),
                 dragged: Cell::new(false),
+                save_timer: RefCell::new(None),
+                saved_position: Cell::new(position),
             }
         });
         sw.start_timer();
+
+        // Save the position when the window has been moved (X11 only)
+        let moved_me = Rc::downgrade(&sw);
+        crate::x11pos::on_moved(&window, move || {
+            if let Some(sw) = moved_me.upgrade() {
+                sw.position_changed();
+            }
+        });
 
         // Stop the theme painting a background: only what draw_func paints shows.
         // Transparent pixels need a compositor; without one they show as black.
@@ -255,12 +296,55 @@ impl SkinWindow {
         });
         window.add_controller(click);
 
+        // Put the window where it was saved (X11 only; does nothing on Wayland)
+        if let Some((x, y)) = position {
+            crate::x11pos::move_when_shown(&window, x, y);
+        }
         window.present();
         sw
     }
 
-    // Stops the timer and closes the window
+    // The window moved or changed size. During a drag this comes many times a second,
+    // so each call restarts a 500 ms wait, and the position is saved once it stops moving.
+    fn position_changed(&self) {
+        if let Some(old) = self.save_timer.borrow_mut().take() {
+            old.remove();
+        }
+        let me = self.me.clone();
+        let id = glib::timeout_add_local_once(Duration::from_millis(500), move || {
+            let Some(sw) = me.upgrade() else { return };
+            // This timer has run, so its id must not be removed again
+            sw.save_timer.borrow_mut().take();
+            sw.save_position_now();
+        });
+        *self.save_timer.borrow_mut() = Some(id);
+    }
+
+    // If a position save is still waiting, does it now. Like Rainmeter's
+    // WriteDeferredOptions, this runs before the skin closes or refreshes.
+    fn flush_position(&self) {
+        let pending = self.save_timer.borrow_mut().take();
+        if let Some(timer) = pending {
+            timer.remove();
+            self.save_position_now();
+        }
+    }
+
+    // Saves where the window is, unless that's already saved
+    fn save_position_now(&self) {
+        let Some(pos) = crate::x11pos::position(&self.window) else { return };
+        if self.saved_position.get() == Some(pos) {
+            return; // only resized (DynamicWindowSize), or moved back to where it was
+        }
+        self.saved_position.set(Some(pos));
+        let Some(manager) = self.manager.upgrade() else { return };
+        let config = self.skin.borrow().config.clone();
+        manager.save_position(&config, pos.0, pos.1);
+    }
+
+    // Stops the timers and closes the window
     fn close(&self) {
+        self.flush_position();
         if let Some(timer) = self.timer.borrow_mut().take() {
             timer.remove();
         }
@@ -312,6 +396,7 @@ impl SkinWindow {
     // If the file now has an error, the old skin keeps running.
     // The timer restarts, since Update= may have changed.
     fn refresh(&self) {
+        self.flush_position();
         let (file, root, settings) = {
             let s = self.skin.borrow();
             (s.file.clone(), s.skins_root.clone(), s.settings_dir.clone())

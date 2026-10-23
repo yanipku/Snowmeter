@@ -19,10 +19,11 @@ The full checklist, compared with Rainmeter for Windows, is in [ROADMAP.md](ROAD
 - [x] Meters: `String`, `Bar`, `Image`, `Line`, `Histogram`
 - [x] Transparent, borderless window that can be dragged with the left button
 - [x] Mouse actions and the first bangs: `!ShowMeter`, `!HideMeter`, `!ToggleMeter`, `!SetVariable`, `!Update`, `!Redraw`, `!Refresh`
+- [x] Several skins at once (give several on the command line)
 
 ## Not yet
 
-- [ ] Several skins at once, remembered positions, right-click menu, tray icon
+- [ ] Remembered positions, right-click menu, tray icon
 - [ ] Number formatting (`NumOfDecimals`, `AutoScale`)
 - [ ] Disk, network and other measures; plugins; Lua scripts
 - [ ] Skin manager window

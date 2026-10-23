@@ -10,6 +10,7 @@ const MAX_DEPTH: usize = 6;
 // Where the settings live. If ~/Rainmeter/Rainmeter.ini exists we use it, so a Rainmeter
 // setup copied over from Windows just works. Otherwise we use our own
 // ~/Snowmeter/Snowmeter.ini. The folder also holds the default Skins folder.
+#[derive(Clone)]
 pub struct Config {
     pub dir: PathBuf,          // ~/Rainmeter or ~/Snowmeter
     pub file: PathBuf,         // the .ini file inside it
@@ -228,6 +229,84 @@ pub fn find_in_skins(arg: &str, root: &Path) -> Result<PathBuf, String> {
     Ok(found)
 }
 
+// The .ini files directly inside one config folder, in Rainmeter's order. Active=N in
+// the settings file counts from 1 in this list.
+pub fn config_files(root: &Path, config: &str) -> Vec<String> {
+    let wanted = config.trim().replace('/', "\\").to_lowercase();
+    list_skins(root)
+        .into_iter()
+        .filter_map(|rel| {
+            let rel = rel.replace('/', "\\");
+            let (folder, file) = rel.rsplit_once('\\')?;
+            (folder.to_lowercase() == wanted).then(|| file.to_string())
+        })
+        .collect()
+}
+
+// Writes Active=N into the config's [section] (0 = not loaded), keeping the rest of the file.
+// The section is named like Rainmeter's: [illustro\Clock].
+pub fn save_active(cfg: &Config, config: &str, index: usize) -> Result<(), String> {
+    save_options(cfg, config, &[("Active", index.to_string())])
+}
+
+// Writes WindowX= and WindowY= into the config's [section]
+pub fn save_position(cfg: &Config, config: &str, x: i32, y: i32) -> Result<(), String> {
+    save_options(cfg, config, &[("WindowX", x.to_string()), ("WindowY", y.to_string())])
+}
+
+// Sets some keys in a config's [section], reading and writing the file once
+fn save_options(cfg: &Config, config: &str, options: &[(&str, String)]) -> Result<(), String> {
+    let section = config.trim().replace('/', "\\");
+    // A ] or a line break in the name would break the file's sections
+    if section.contains([']', '\n', '\r']) {
+        return Err(format!("Can't save the config name \"{section}\""));
+    }
+    // As in save_skins_dir: a file that can't be read must not be overwritten
+    let mut text = if cfg.file.exists() { textfile::read_text(&cfg.file)? } else { String::new() };
+    for (key, value) in options {
+        text = set_option(&text, &section, key, value);
+    }
+    fs::write(&cfg.file, text).map_err(|e| format!("Cannot write {}: {}", cfg.file.display(), e))
+}
+
+// The saved window position of a config: WindowX= and WindowY= in its section.
+// Plain whole numbers only for now; Rainmeter's 50%, R/B and @N forms are skipped.
+pub fn read_position(cfg: &Config, config: &str) -> Option<(i32, i32)> {
+    let text = textfile::read_text(&cfg.file).ok()?;
+    let ini = Ini::parse(&text);
+    let section = ini.section(&config.trim().replace('/', "\\"))?;
+    let get = |key: &str| section.options.get(key)?.trim().parse::<i32>().ok();
+    Some((get("windowx")?, get("windowy")?))
+}
+
+// Every config with a valid Active=N: the skin files to load at start-up.
+// As in Rainmeter, a number outside 1..=(number of files) is ignored.
+pub fn active_skins(cfg: &Config, root: &Path) -> Vec<PathBuf> {
+    let Ok(text) = textfile::read_text(&cfg.file) else { return Vec::new() };
+    let ini = Ini::parse(&text);
+    // The config folders, each once (list_skins is sorted, so a config's files are together)
+    let mut configs: Vec<String> = list_skins(root)
+        .iter()
+        .filter_map(|rel| Some(rel.replace('/', "\\").rsplit_once('\\')?.0.to_string()))
+        .collect();
+    configs.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+
+    let mut found = Vec::new();
+    for config in configs {
+        let Some(active) = ini.section(&config).and_then(|s| s.options.get("active")) else {
+            continue;
+        };
+        let Ok(n) = active.trim().parse::<usize>() else { continue };
+        let files = config_files(root, &config);
+        if n >= 1 && n <= files.len() {
+            if let Ok(path) = find_in_skins(&format!("{config}\\{}", files[n - 1]), root) {
+                found.push(path);
+            }
+        }
+    }
+    found
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,5 +334,31 @@ mod tests {
         );
         // Empty file
         assert_eq!(set_option("", "Snowmeter", "SkinPath", "/s"), "[Snowmeter]\nSkinPath=/s\n");
+    }
+
+    #[test]
+    fn active_round_trip() {
+        // A throwaway skins folder and settings file in the system's temp folder
+        let base = env::temp_dir().join(format!("snowmeter-test-{}", std::process::id()));
+        let root = base.join("Skins");
+        fs::create_dir_all(root.join("Suite/Clock")).unwrap();
+        for f in ["b.ini", "A.ini"] {
+            fs::write(root.join("Suite/Clock").join(f), "").unwrap();
+        }
+        let root = root.canonicalize().unwrap();
+        let cfg = Config { dir: base.clone(), file: base.join("Snowmeter.ini"), section: "Snowmeter" };
+        fs::write(&cfg.file, "[Snowmeter]\n").unwrap();
+
+        // Case-insensitive order, as on Windows: A.ini is 1, b.ini is 2
+        assert_eq!(config_files(&root, "suite/clock"), ["A.ini", "b.ini"]);
+        save_active(&cfg, "Suite/Clock", 2).unwrap();
+        assert_eq!(fs::read_to_string(&cfg.file).unwrap(), "[Snowmeter]\n\n[Suite\\Clock]\nActive=2\n");
+        assert_eq!(active_skins(&cfg, &root), [root.join("Suite/Clock/b.ini")]);
+        // 0 (not loaded) and numbers past the last file load nothing
+        for n in [0, 3] {
+            save_active(&cfg, "Suite\\Clock", n).unwrap();
+            assert!(active_skins(&cfg, &root).is_empty());
+        }
+        fs::remove_dir_all(&base).unwrap();
     }
 }
