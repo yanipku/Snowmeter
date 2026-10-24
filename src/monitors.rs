@@ -14,21 +14,11 @@ use gtk4::prelude::*;
 // Positions count from the primary's top-left corner, as on Windows, so the primary is
 // always at 0,0 and a monitor left of it has a negative X.
 pub fn screen_vars() -> Vec<(String, String)> {
-    let (ox, oy) = origin();
-    let rects: Vec<gdk::Rectangle> = gtk_rects()
-        .iter()
-        .map(|r| gdk::Rectangle::new(r.x() - ox, r.y() - oy, r.width(), r.height()))
-        .collect();
-    let Some(primary) = rects.first() else {
+    let all = monitor_rects();
+    let Some((virtual_screen, rects)) = all.split_first() else {
         return Vec::new();
     };
-
-    // The rectangle that covers every monitor
-    let left = rects.iter().map(|r| r.x()).min().unwrap_or(0);
-    let top = rects.iter().map(|r| r.y()).min().unwrap_or(0);
-    let right = rects.iter().map(|r| r.x() + r.width()).max().unwrap_or(0);
-    let bottom = rects.iter().map(|r| r.y() + r.height()).max().unwrap_or(0);
-    let virtual_screen = gdk::Rectangle::new(left, top, right - left, bottom - top);
+    let primary = &rects[0];
 
     let mut vars = Vec::new();
     let mut add = |name: &str, suffix: &str, r: &gdk::Rectangle| {
@@ -44,8 +34,32 @@ pub fn screen_vars() -> Vec<(String, String)> {
             add(area, &format!("@{}", i + 1), r);
         }
     }
-    add("vscreenarea", "", &virtual_screen);
+    add("vscreenarea", "", virtual_screen);
     vars
+}
+
+// The monitors numbered as Rainmeter's @N counts them: [0] is the rectangle that covers
+// every monitor (@0), then [1] the primary, [2] the next, and so on.
+// Positions count from the primary's top-left, as in screen_vars.
+// Empty when GTK isn't started (as in `cargo test`) or there is no monitor.
+pub fn monitor_rects() -> Vec<gdk::Rectangle> {
+    let (ox, oy) = origin();
+    let rects: Vec<gdk::Rectangle> = gtk_rects()
+        .iter()
+        .map(|r| gdk::Rectangle::new(r.x() - ox, r.y() - oy, r.width(), r.height()))
+        .collect();
+    if rects.is_empty() {
+        return rects;
+    }
+
+    // The rectangle that covers every monitor
+    let left = rects.iter().map(|r| r.x()).min().unwrap_or(0);
+    let top = rects.iter().map(|r| r.y()).min().unwrap_or(0);
+    let right = rects.iter().map(|r| r.x() + r.width()).max().unwrap_or(0);
+    let bottom = rects.iter().map(|r| r.y() + r.height()).max().unwrap_or(0);
+    let mut all = vec![gdk::Rectangle::new(left, top, right - left, bottom - top)];
+    all.extend(rects);
+    all
 }
 
 // Where the primary monitor's top-left corner is, in GTK's coordinates.
@@ -58,6 +72,12 @@ pub fn origin() -> (i32, i32) {
 // Every monitor's rectangle as GTK gives it (top-left of the whole desktop = 0,0).
 // Empty when GTK isn't started (as in `cargo test`) or there is no display.
 fn gtk_rects() -> Vec<gdk::Rectangle> {
+    gtk_monitors().iter().map(|m| m.geometry()).collect()
+}
+
+// Every monitor as GTK knows it, in GTK's order (the first is our primary).
+// Empty when GTK isn't started (as in `cargo test`) or there is no display.
+pub fn gtk_monitors() -> Vec<gdk::Monitor> {
     if !gtk4::is_initialized() {
         return Vec::new();
     }
@@ -65,8 +85,5 @@ fn gtk_rects() -> Vec<gdk::Rectangle> {
         return Vec::new();
     };
     let list = display.monitors();
-    (0..list.n_items())
-        .filter_map(|i| list.item(i).and_downcast::<gdk::Monitor>())
-        .map(|m| m.geometry())
-        .collect()
+    (0..list.n_items()).filter_map(|i| list.item(i).and_downcast::<gdk::Monitor>()).collect()
 }

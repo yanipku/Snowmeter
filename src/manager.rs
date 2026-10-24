@@ -1,7 +1,9 @@
 // The running skins: one window per config (a folder under Skins, like illustro\Clock),
 // as in Rainmeter, where at most one skin of each config runs at a time.
-use crate::action::{self, After, ConfigBang, Target};
-use crate::config::{self, Config};
+use crate::action::{self, After, ConfigBang, Target, WindowBang};
+use crate::dollarvar::SkinInfo;
+use crate::position::ZPos;
+use crate::config::{self, Config, SkinSettings};
 use crate::meter;
 use crate::mouse::{MouseEvent, Press};
 use crate::skin::{self, Skin};
@@ -20,6 +22,25 @@ pub struct Manager {
     // Keys are lowercase config names. The map holds the only strong reference to each
     // window's state; the window's own callbacks hold weak ones (see SkinWindow::open).
     skins: RefCell<HashMap<String, Rc<SkinWindow>>>,
+}
+
+// Loads a skin file that has no window yet. [$SkinX] and the others see where its settings
+// will put it, as in Rainmeter, which works the position out from the options as it
+// reads the skin. The size isn't known before loading, so it counts as 0 × 0.
+pub fn load_skin(file: &Path, skins_root: &Path, cfg: &Config) -> Result<Skin, String> {
+    let folder = file.parent().unwrap_or(Path::new(""));
+    let config = folder.strip_prefix(skins_root).unwrap_or(folder).to_string_lossy().replace('/', "\\");
+    let settings = config::read_skin_settings(cfg, &config);
+    let rects = crate::monitors::monitor_rects();
+    let (x, y) = crate::position::resolve(&settings.position, (0, 0), &rects);
+    let info = SkinInfo { x, y, w: 0, h: 0, z: settings.z };
+    crate::dollarvar::with_skin(info, || skin::load(file, skins_root, &cfg.dir))
+}
+
+// ClickThrough: an empty input region, so the mouse goes to the window behind.
+// Some(empty) = nowhere; None would mean the whole window.
+fn clear_input_region(surface: &gdk::Surface) {
+    surface.set_input_region(Some(&gtk4::cairo::Region::create()));
 }
 
 // Config names ignore case, and \ or / both work
@@ -45,11 +66,21 @@ impl Manager {
         // in the list, so nothing is saved for it.
         let name = skin.file.file_name().map(|n| n.to_string_lossy().to_lowercase());
         let files = config::config_files(&self.skins_root, &skin.config);
+        let settings = config::read_skin_settings(&self.cfg, &skin.config);
         if let Some(i) = files.iter().position(|f| Some(f.to_lowercase()) == name) {
             self.save_active(&skin.config, i + 1);
+            // and, like Rainmeter, write any window setting the file doesn't have yet
+            if let Err(e) = config::save_missing_settings(&self.cfg, &skin.config, &settings) {
+                eprintln!("Can't save the skin's settings: {e}");
+            }
         }
-        let position = config::read_position(&self.cfg, &skin.config);
-        let window = SkinWindow::open(&self.app, skin, position, Rc::downgrade(self));
+        let rects = crate::monitors::monitor_rects();
+        let size = (skin.width, skin.height);
+        let mut position = crate::position::resolve(&settings.position, size, &rects);
+        if settings.keep_on_screen {
+            position = crate::position::keep_on_screen(position, size, rects.get(1..).unwrap_or(&[]));
+        }
+        let window = SkinWindow::open(&self.app, skin, position, &settings, Rc::downgrade(self));
         // The new window opens before the old one closes, so GTK never sees zero windows
         let old = self.skins.borrow_mut().insert(key, window);
         if let Some(old) = old {
@@ -78,7 +109,7 @@ impl Manager {
                 return Ok(());
             }
         }
-        let skin = skin::load(&path, &self.skins_root, &self.cfg.dir)?;
+        let skin = load_skin(&path, &self.skins_root, &self.cfg)?;
         self.add(skin);
         Ok(())
     }
@@ -96,9 +127,14 @@ impl Manager {
         }
     }
 
-    // Remembers where a config's window is (WindowX=, WindowY=)
-    fn save_position(&self, config: &str, x: i32, y: i32) {
-        if let Err(e) = config::save_position(&self.cfg, config, x, y) {
+    // Remembers where a config's window is (WindowX=, WindowY=), keeping the form the
+    // options had (20R stays counted from the right, @2 stays on monitor 2, ...)
+    // `size` is the skin's, for AnchorX/AnchorY.
+    fn save_position(&self, config: &str, pos: (i32, i32), size: (i32, i32)) {
+        let opts = config::read_position(&self.cfg, config);
+        let rects = crate::monitors::monitor_rects();
+        let (x, y) = crate::position::to_options(&opts, pos, size, &rects);
+        if let Err(e) = config::save_position(&self.cfg, config, &x, &y) {
             eprintln!("Can't save the skin's position: {e}");
         }
     }
@@ -171,6 +207,16 @@ struct SkinWindow {
     timer: RefCell<Option<glib::SourceId>>,
     // Set while the skin is being moved, so letting go of it isn't a click (Rainmeter's m_Dragged)
     dragged: Cell<bool>,
+    // Draggable= (a Cell, so a bang can change it later)
+    draggable: Cell<bool>,
+    // KeepOnScreen=, SnapEdges=, ClickThrough= and AlwaysOnTop=
+    keep_on_screen: Cell<bool>,
+    snap_edges: Cell<bool>,
+    click_through: Cell<bool>,
+    z: Cell<ZPos>,
+    // Set when the last left press ran a LeftMouseDownAction: as in Rainmeter, that press
+    // doesn't start a drag
+    press_ran_action: Cell<bool>,
     // The short wait after a move before saving the position (see position_changed)
     save_timer: RefCell<Option<glib::SourceId>>,
     // The position last saved or loaded, so a resize alone doesn't write the file
@@ -181,11 +227,12 @@ impl SkinWindow {
     // Rc::new_cyclic hands us a Weak pointer to the SkinWindow before it exists, so the
     // callbacks can be built with it. They hold Weak, not Rc: the window owns its callbacks,
     // so a strong pointer back would be a loop that is never freed.
-    // `position` is the saved WindowX/WindowY, if any.
+    // `position` is where WindowX/WindowY put the window.
     fn open(
         app: &Application,
         skin: Skin,
-        position: Option<(i32, i32)>,
+        position: (i32, i32),
+        settings: &SkinSettings,
         manager: Weak<Manager>,
     ) -> Rc<SkinWindow> {
         let (width, height) = (skin.width, skin.height);
@@ -219,8 +266,14 @@ impl SkinWindow {
                 area: area.clone(),
                 timer: RefCell::new(None),
                 dragged: Cell::new(false),
+                draggable: Cell::new(settings.draggable),
+                keep_on_screen: Cell::new(settings.keep_on_screen),
+                snap_edges: Cell::new(settings.snap_edges),
+                click_through: Cell::new(settings.click_through),
+                z: Cell::new(settings.z),
+                press_ran_action: Cell::new(false),
                 save_timer: RefCell::new(None),
-                saved_position: Cell::new(position),
+                saved_position: Cell::new(Some(position)),
             }
         });
         sw.start_timer();
@@ -250,11 +303,28 @@ impl SkinWindow {
         let weak_window = window.downgrade();
         let drag_me = Rc::downgrade(&sw);
         drag.connect_drag_update(move |gesture, dx, dy| {
-            // A few pixels of wobble is still a click, not a drag
-            if dx.hypot(dy) < 4.0 {
+            let (Some(window), Some(sw)) = (weak_window.upgrade(), drag_me.upgrade()) else { return };
+            if !sw.draggable.get() || sw.press_ran_action.get() {
                 return;
             }
-            let (Some(window), Some(sw)) = (weak_window.upgrade(), drag_me.upgrade()) else { return };
+            // A few pixels of wobble is still a click, not a drag
+            if !sw.dragged.get() && dx.hypot(dy) < 4.0 {
+                return;
+            }
+            // A layer-shell window (Wayland) can't be moved by the window manager: we move
+            // it. dx, dy count from the press point inside the window; once the window has
+            // moved that much, the mouse is over the same point again, so each update only
+            // adds the newest movement.
+            if let Some((wx, wy)) = crate::wlpos::position(&window) {
+                sw.dragged.set(true);
+                // Holding Ctrl or Shift turns snapping off, as in Rainmeter
+                let held = gesture.current_event_state();
+                let snapping = !held.intersects(gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::SHIFT_MASK);
+                let target = sw.adjust_move((wx + dx as i32, wy + dy as i32), snapping);
+                crate::wlpos::move_to(&window, target);
+                sw.position_changed(); // saved once the moving stops, as on X11
+                return;
+            }
             let Some((x, y)) = gesture.start_point() else { return };
             let (Some(device), Some(surface)) = (gesture.device(), window.surface()) else { return };
             if let Ok(toplevel) = surface.downcast::<gdk::Toplevel>() {
@@ -282,6 +352,9 @@ impl SkinWindow {
                 events.extend(MouseEvent::from_button(button, Press::DoubleClick));
             }
             events.extend(MouseEvent::from_button(button, Press::Down));
+            let ran = events.contains(&MouseEvent::LeftDown)
+                && sw.skin.borrow().action_at(x, y, MouseEvent::LeftDown).is_some();
+            sw.press_ran_action.set(ran);
             sw.mouse_action(x, y, &events);
         });
         let release_me = Rc::downgrade(&sw);
@@ -296,12 +369,73 @@ impl SkinWindow {
         });
         window.add_controller(click);
 
-        // Put the window where it was saved (X11 only; does nothing on Wayland)
-        if let Some((x, y)) = position {
-            crate::x11pos::move_when_shown(&window, x, y);
+        // Put the window in place: with the layer shell on Wayland, else by asking the X server
+        if !crate::wlpos::setup(&window, position, settings.z) {
+            crate::x11pos::move_when_shown(&window, position.0, position.1);
+            crate::x11pos::set_z_pos_when_managed(&window, settings.z);
         }
+
+        // ClickThrough=1: an empty input region (the part of the window that gets the
+        // mouse), so every click goes to the window behind. Works on X11 and Wayland.
+        // Unlike on Windows, holding Ctrl doesn't make it clickable: with no input region
+        // we never learn that the mouse is over the skin.
+        // GTK sets the input region itself each time it lays the window out, so ours is set
+        // again after every layout (our handler is connected after GTK's, so it runs last).
+        // It checks the setting each time, since !ClickThrough can change it.
+        let region_me = Rc::downgrade(&sw);
+        window.connect_realize(move |w| {
+            let Some(surface) = w.surface() else { return };
+            let me = region_me.clone();
+            let clear = move |s: &gdk::Surface| {
+                if me.upgrade().is_some_and(|sw| sw.click_through.get()) {
+                    clear_input_region(s);
+                }
+            };
+            clear(&surface);
+            surface.connect_layout(move |s, _, _| clear(s));
+        });
         window.present();
         sw
+    }
+
+    // !ZPos, !Draggable, !ClickThrough, !KeepOnScreen, !SnapEdges: changes the setting
+    // straight away and saves it, as Rainmeter does
+    fn apply_window_bang(&self, bang: WindowBang) {
+        let bit = |b: bool| if b { "1" } else { "0" }.to_string();
+        // Sets a Cell<bool> setting from the bang's 1 / 0 / -1, returning the new value
+        let set = |cell: &Cell<bool>, n: i32| {
+            let b = action::flag(n, cell.get());
+            cell.set(b);
+            b
+        };
+        let (key, value) = match bang {
+            WindowBang::ZPos(z) => {
+                let old = self.z.replace(z);
+                if !crate::wlpos::set_z_pos(&self.window, z) {
+                    crate::x11pos::change_z_pos(&self.window, old, z);
+                }
+                ("AlwaysOnTop", z.number().to_string())
+            }
+            WindowBang::Draggable(n) => ("Draggable", bit(set(&self.draggable, n))),
+            WindowBang::KeepOnScreen(n) => ("KeepOnScreen", bit(set(&self.keep_on_screen, n))),
+            WindowBang::SnapEdges(n) => ("SnapEdges", bit(set(&self.snap_edges, n))),
+            WindowBang::ClickThrough(n) => {
+                let on = set(&self.click_through, n);
+                if let Some(surface) = self.window.surface() {
+                    if on {
+                        clear_input_region(&surface);
+                    } else {
+                        surface.set_input_region(None); // None: the whole window again
+                    }
+                }
+                ("ClickThrough", bit(on))
+            }
+        };
+        let Some(manager) = self.manager.upgrade() else { return };
+        let config = self.skin.borrow().config.clone();
+        if let Err(e) = config::save_setting(&manager.cfg, &config, key, &value) {
+            eprintln!("Can't save {key}: {e}");
+        }
     }
 
     // The window moved or changed size. During a drag this comes many times a second,
@@ -330,16 +464,69 @@ impl SkinWindow {
         }
     }
 
+    // Where a window being moved to `pos` really goes: snapped to the edges of other skins
+    // and of the screen (SnapEdges=1, and `snapping`), then kept on screen (KeepOnScreen=1)
+    fn adjust_move(&self, mut pos: (i32, i32), snapping: bool) -> (i32, i32) {
+        let size = self.size();
+        let rects = crate::monitors::monitor_rects();
+        let monitors = rects.get(1..).unwrap_or(&[]);
+        if snapping && self.snap_edges.get() {
+            let others: Vec<gdk::Rectangle> = match self.manager.upgrade() {
+                // every skin but this one (compared by address)
+                Some(m) => m.all().iter().filter(|o| !std::ptr::eq(Rc::as_ptr(o), self)).filter_map(|o| o.rect()).collect(),
+                None => Vec::new(),
+            };
+            pos = crate::position::snap(pos, size, &others, monitors);
+        }
+        if self.keep_on_screen.get() {
+            pos = crate::position::keep_on_screen(pos, size, monitors);
+        }
+        pos
+    }
+
+    // What [$Skin…] variables see: where the window is now (where it was put, if we
+    // can't tell, as on GNOME), its size and AlwaysOnTop
+    fn info(&self) -> SkinInfo {
+        let (w, h) = self.size();
+        let pos = crate::wlpos::position(&self.window).or_else(|| crate::x11pos::position(&self.window));
+        let (x, y) = pos.or(self.saved_position.get()).unwrap_or((0, 0));
+        SkinInfo { x, y, w, h, z: self.z.get() }
+    }
+
+    // The skin's width and height
+    fn size(&self) -> (i32, i32) {
+        let s = self.skin.borrow();
+        (s.width, s.height)
+    }
+
+    // Where the window is and how big, if we can tell (X11, or Wayland with layer shell)
+    fn rect(&self) -> Option<gdk::Rectangle> {
+        let (x, y) = crate::wlpos::position(&self.window).or_else(|| crate::x11pos::position(&self.window))?;
+        let (w, h) = self.size();
+        Some(gdk::Rectangle::new(x, y, w, h))
+    }
+
     // Saves where the window is, unless that's already saved
     fn save_position_now(&self) {
-        let Some(pos) = crate::x11pos::position(&self.window) else { return };
+        let pos = crate::wlpos::position(&self.window).or_else(|| crate::x11pos::position(&self.window));
+        let Some(mut pos) = pos else { return };
+        // On X11 the window manager did the moving, so SnapEdges and KeepOnScreen can only
+        // put the window right now that it has stopped (on Wayland the drag already did)
+        let adjusted = self.adjust_move(pos, true);
+        if adjusted != pos {
+            crate::x11pos::move_to(&self.window, adjusted);
+            pos = adjusted;
+        }
         if self.saved_position.get() == Some(pos) {
             return; // only resized (DynamicWindowSize), or moved back to where it was
         }
         self.saved_position.set(Some(pos));
         let Some(manager) = self.manager.upgrade() else { return };
-        let config = self.skin.borrow().config.clone();
-        manager.save_position(&config, pos.0, pos.1);
+        let (config, size) = {
+            let s = self.skin.borrow();
+            (s.config.clone(), (s.width, s.height))
+        };
+        manager.save_position(&config, pos, size);
     }
 
     // Stops the timers and closes the window
@@ -371,7 +558,8 @@ impl SkinWindow {
     // One update of the whole skin: measures, then meters, then the window size, then a
     // repaint. Used by the Update= timer and by !Update.
     fn update(&self) {
-        let new_size = {
+        // [$SkinX] and the others, in dynamic options, describe this skin
+        let new_size = crate::dollarvar::with_skin(self.info(), || {
             let mut guard = self.skin.borrow_mut();
             let s = &mut *guard;
             let values = crate::measure::update_all(&mut s.measures);
@@ -383,7 +571,7 @@ impl SkinWindow {
             } else {
                 None
             }
-        };
+        });
         // Resize outside the borrow, so nothing can ask to draw while the skin is locked
         if let Some((w, h)) = new_size {
             self.area.set_content_width(w);
@@ -401,7 +589,8 @@ impl SkinWindow {
             let s = self.skin.borrow();
             (s.file.clone(), s.skins_root.clone(), s.settings_dir.clone())
         };
-        let fresh = match skin::load(&file, &root, &settings) {
+        let info = self.info();
+        let fresh = match crate::dollarvar::with_skin(info, || skin::load(&file, &root, &settings)) {
             Ok(fresh) => fresh,
             Err(e) => {
                 eprintln!("!Refresh: {e}");
@@ -418,12 +607,13 @@ impl SkinWindow {
 
     // Runs the action of the first of `events` that anything at (x, y) has an action for
     fn mouse_action(&self, x: f64, y: f64, events: &[MouseEvent]) {
+        // [$SkinX] and the others in the action describe this skin
+        let info = self.info();
         // Copy the action text out, so the read borrow ends before the bangs change the skin
         let text = {
             let s = self.skin.borrow();
-            let found = events
-                .iter()
-                .find_map(|&e| s.action_at(x, y, e).map(|(name, a)| (e, s.expand_action(name, a))));
+            let expand = |name: &str, a: &str| crate::dollarvar::with_skin(info, || s.expand_action(name, a));
+            let found = events.iter().find_map(|&e| s.action_at(x, y, e).map(|(name, a)| (e, expand(name, a))));
             let Some((event, text)) = found else { return };
             println!("{event:?} at ({x:.0}, {y:.0}): {text}");
             text
@@ -477,6 +667,7 @@ impl SkinWindow {
         let after = action::execute(&mut self.skin.borrow_mut(), command);
         match after {
             After::Redraw => self.area.queue_draw(),
+            After::Window(bang) => self.apply_window_bang(bang),
             After::Update => {
                 // As in Rainmeter, the next tick comes a full Update= later
                 self.update();

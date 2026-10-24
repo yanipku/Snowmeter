@@ -39,7 +39,7 @@ impl Skin {
     // for [#CURRENTSECTION].
     pub fn expand_action(&self, section: &str, text: &str) -> String {
         let has_sections = text.contains("[&");
-        if !has_sections && !text.contains("[#") {
+        if !has_sections && !text.contains("[#") && !text.contains("[\\") && !text.contains("[$") {
             return text.to_string(); // the usual case: no copy of the variable table
         }
         let vars = section_vars(&self.vars, section);
@@ -245,7 +245,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
     // that section. Plain #Name# stays, and is still followed later wherever it's used.
     let snapshot = vars.clone();
     for value in vars.values_mut() {
-        if value.contains("[#") {
+        if value.contains("[#") || value.contains("[\\") {
             *value = ini::resolve_nested(value, &snapshot);
         }
     }

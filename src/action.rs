@@ -2,6 +2,7 @@
 // Follows Rainmeter's CommandHandler::ExecuteCommand (Library/CommandHandler.cpp).
 
 use crate::formula;
+use crate::position::ZPos;
 use crate::skin::Skin;
 
 // What the window has to do after a bang, since bangs can't reach the window themselves
@@ -11,6 +12,23 @@ pub enum After {
     Update, // !Update: a full update straight away, then paint
     Refresh, // !Refresh: read the skin file again from scratch
     Config(ConfigBang), // a bang that loads or unloads skins: only the manager can do it
+    Window(WindowBang), // a bang that changes a window setting: only the window can do it
+}
+
+// !ZPos, !Draggable, !ClickThrough, !KeepOnScreen, !SnapEdges. The numbers are the
+// bang's argument: 1 on, 0 off, -1 toggle (any other number counts as on).
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum WindowBang {
+    ZPos(ZPos),
+    Draggable(i32),
+    ClickThrough(i32),
+    KeepOnScreen(i32),
+    SnapEdges(i32),
+}
+
+// A setting's new value from one of those numbers and its value now
+pub fn flag(n: i32, now: bool) -> bool {
+    if n == -1 { !now } else { n != 0 }
 }
 
 // !ActivateConfig, !DeactivateConfig, !ToggleConfig
@@ -35,6 +53,7 @@ fn arg_count(bang: &str) -> Option<usize> {
     match bang {
         "redraw" | "update" | "refresh" => Some(0),
         "showmeter" | "hidemeter" | "togglemeter" => Some(1),
+        "zpos" | "changezpos" | "draggable" | "clickthrough" | "keeponscreen" | "snapedges" => Some(1),
         "setvariable" => Some(2),
         _ => None,
     }
@@ -108,6 +127,17 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
         }
         "deactivateconfig" => {
             After::Config(ConfigBang::Deactivate { config: args.first().cloned() })
+        }
+        "zpos" | "changezpos" | "draggable" | "clickthrough" | "keeponscreen" | "snapedges" => {
+            // Rainmeter's ParseInt: a number or a (formula), the fraction dropped; else 0
+            let n = args.first().and_then(|a| formula::parse_number(a).ok()).map_or(0, |n| n as i32);
+            After::Window(match lower.as_str() {
+                "draggable" => WindowBang::Draggable(n),
+                "clickthrough" => WindowBang::ClickThrough(n),
+                "keeponscreen" => WindowBang::KeepOnScreen(n),
+                "snapedges" => WindowBang::SnapEdges(n),
+                _ => WindowBang::ZPos(ZPos::from_number(n)), // !ChangeZPos is the old name
+            })
         }
         _ => {
             println!("!{name} isn't supported yet");
@@ -276,6 +306,19 @@ mod tests {
         // Bangs we don't know yet, and programs, stay on this skin
         assert_eq!(target("!Log hi Other"), Target::This);
         assert_eq!(target("notepad.exe"), Target::This);
+        // The window-setting bangs take one argument, then the config
+        assert_eq!(target("!Draggable 0"), Target::This);
+        assert_eq!(target("!ZPos 1 *"), Target::All);
+        assert_eq!(target("!ClickThrough -1 Other"), config("Other"));
+    }
+
+    #[test]
+    fn window_setting_flags() {
+        assert!(flag(1, false));
+        assert!(!flag(0, true));
+        assert!(flag(-1, false)); // toggle
+        assert!(!flag(-1, true));
+        assert!(flag(5, false)); // any other number is on
     }
 
     #[test]

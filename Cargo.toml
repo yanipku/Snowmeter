@@ -10,3 +10,6 @@ gtk4 = "0.11.5"
 # X11 only: window positions (Wayland doesn't let programs see or set them).
 # "xlib" loads libX11 at run time, so the program still starts without it.
 gdk4-x11 = { version = "0.11.5", features = ["xlib"] }
+# Wayland only: window positions and layers, through the layer-shell protocol.
+# Needs the system library libgtk4-layer-shell (package libgtk4-layer-shell-dev to build).
+gtk4-layer-shell = "0.8.1"

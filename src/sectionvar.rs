@@ -220,7 +220,7 @@ fn encode_url(s: &str) -> String {
 
 // The whole number at the start of `s`, the way C's wcstol reads it:
 // spaces skipped, an optional sign, then digits. Anything after them is ignored.
-fn leading_int(s: &str) -> Option<i32> {
+pub fn leading_int(s: &str) -> Option<i32> {
     let s = s.trim_start();
     let sign_len = usize::from(s.starts_with(['+', '-']));
     let digits = s[sign_len..].chars().take_while(char::is_ascii_digit).count();

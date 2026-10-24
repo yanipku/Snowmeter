@@ -1,5 +1,7 @@
 use crate::ini::Ini;
 use crate::paths;
+use crate::position::{Options, ZPos};
+use crate::sectionvar::leading_int;
 use crate::textfile;
 use std::env;
 use std::fs;
@@ -250,8 +252,13 @@ pub fn save_active(cfg: &Config, config: &str, index: usize) -> Result<(), Strin
 }
 
 // Writes WindowX= and WindowY= into the config's [section]
-pub fn save_position(cfg: &Config, config: &str, x: i32, y: i32) -> Result<(), String> {
+pub fn save_position(cfg: &Config, config: &str, x: &str, y: &str) -> Result<(), String> {
     save_options(cfg, config, &[("WindowX", x.to_string()), ("WindowY", y.to_string())])
+}
+
+// Writes one setting into the config's [section], such as Draggable=0 after a !Draggable 0
+pub fn save_setting(cfg: &Config, config: &str, key: &str, value: &str) -> Result<(), String> {
+    save_options(cfg, config, &[(key, value.to_string())])
 }
 
 // Sets some keys in a config's [section], reading and writing the file once
@@ -269,14 +276,75 @@ fn save_options(cfg: &Config, config: &str, options: &[(&str, String)]) -> Resul
     fs::write(&cfg.file, text).map_err(|e| format!("Cannot write {}: {}", cfg.file.display(), e))
 }
 
-// The saved window position of a config: WindowX= and WindowY= in its section.
-// Plain whole numbers only for now; Rainmeter's 50%, R/B and @N forms are skipped.
-pub fn read_position(cfg: &Config, config: &str) -> Option<(i32, i32)> {
-    let text = textfile::read_text(&cfg.file).ok()?;
+// A config's window settings, from its [section] in the settings file
+#[derive(Debug, Clone)]
+pub struct SkinSettings {
+    // WindowX, WindowY, AnchorX and AnchorY as written, such as "10%R@2" (position.rs reads
+    // them). A missing one is "0", Rainmeter's default.
+    pub position: Options,
+    pub z: ZPos,             // AlwaysOnTop=, default 0 (Normal)
+    pub draggable: bool,     // Draggable=, default 1
+    pub click_through: bool, // ClickThrough=, default 0
+    pub keep_on_screen: bool, // KeepOnScreen=, default 1
+    pub snap_edges: bool,    // SnapEdges=, default 1
+}
+
+// Reads a config's window settings, reading the file once. Missing ones get
+// Rainmeter's defaults, and so does everything when the file can't be read.
+pub fn read_skin_settings(cfg: &Config, config: &str) -> SkinSettings {
+    let text = textfile::read_text(&cfg.file).unwrap_or_default();
     let ini = Ini::parse(&text);
-    let section = ini.section(&config.trim().replace('/', "\\"))?;
-    let get = |key: &str| section.options.get(key)?.trim().parse::<i32>().ok();
-    Some((get("windowx")?, get("windowy")?))
+    let section = ini.section(&config.trim().replace('/', "\\"));
+    let get = |key: &str| section.and_then(|s| s.options.get(key)).map(|v| v.trim().to_string());
+    // Rainmeter's ReadBool: the whole number at the start, 0 = false
+    let get_bool = |key: &str, default: bool| get(key).map_or(default, |v| leading_int(&v).unwrap_or(0) != 0);
+
+    let or_zero = |key: &str| get(key).unwrap_or_else(|| "0".into());
+    let position = Options {
+        x: or_zero("windowx"),
+        y: or_zero("windowy"),
+        anchor_x: or_zero("anchorx"),
+        anchor_y: or_zero("anchory"),
+    };
+    SkinSettings {
+        position,
+        z: get("alwaysontop").map_or(ZPos::Normal, |v| ZPos::parse(&v)),
+        draggable: get_bool("draggable", true),
+        click_through: get_bool("clickthrough", false),
+        keep_on_screen: get_bool("keeponscreen", true),
+        snap_edges: get_bool("snapedges", true),
+    }
+}
+
+// Just the position part of read_skin_settings
+pub fn read_position(cfg: &Config, config: &str) -> Options {
+    read_skin_settings(cfg, config).position
+}
+
+// Writes the window settings that are missing from the config's [section], with the
+// values `s` has for them (their defaults, since they're missing). Settings already in
+// the file are left alone. As in Rainmeter's ReadOptions/WriteOptions, this gives a newly
+// loaded skin a full set of settings to edit.
+pub fn save_missing_settings(cfg: &Config, config: &str, s: &SkinSettings) -> Result<(), String> {
+    let text = if cfg.file.exists() { textfile::read_text(&cfg.file)? } else { String::new() };
+    let ini = Ini::parse(&text);
+    let section = ini.section(&config.trim().replace('/', "\\"));
+    let has = |key: &str| section.is_some_and(|sec| sec.options.contains_key(&key.to_lowercase()));
+    let bool_text = |b: bool| if b { "1" } else { "0" }.to_string();
+    let all = [
+        ("WindowX", s.position.x.clone()),
+        ("WindowY", s.position.y.clone()),
+        ("AlwaysOnTop", s.z.number().to_string()),
+        ("Draggable", bool_text(s.draggable)),
+        ("SnapEdges", bool_text(s.snap_edges)),
+        ("ClickThrough", bool_text(s.click_through)),
+        ("KeepOnScreen", bool_text(s.keep_on_screen)),
+    ];
+    let missing: Vec<(&str, String)> = all.into_iter().filter(|(key, _)| !has(key)).collect();
+    if missing.is_empty() {
+        return Ok(()); // the usual case once a skin has been loaded before: no write
+    }
+    save_options(cfg, config, &missing)
 }
 
 // Every config with a valid Active=N: the skin files to load at start-up.
@@ -359,6 +427,27 @@ mod tests {
             save_active(&cfg, "Suite\\Clock", n).unwrap();
             assert!(active_skins(&cfg, &root).is_empty());
         }
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn missing_settings_are_written_once() {
+        let base = env::temp_dir().join(format!("snowmeter-test-settings-{}", std::process::id()));
+        fs::create_dir_all(&base).unwrap();
+        let cfg = Config { dir: base.clone(), file: base.join("Snowmeter.ini"), section: "Snowmeter" };
+        // A skin with only Active and a hand-set Draggable=0
+        fs::write(&cfg.file, "[Suite\\Clock]\nActive=1\nDraggable=0\n").unwrap();
+
+        let s = read_skin_settings(&cfg, "Suite/Clock");
+        save_missing_settings(&cfg, "Suite/Clock", &s).unwrap();
+        let text = fs::read_to_string(&cfg.file).unwrap();
+        for line in ["WindowX=0", "WindowY=0", "AlwaysOnTop=0", "SnapEdges=1", "ClickThrough=0", "KeepOnScreen=1"] {
+            assert!(text.contains(line), "{line} missing in:\n{text}");
+        }
+        assert!(text.contains("Draggable=0") && !text.contains("Draggable=1")); // left alone
+        // A second time there's nothing to add, so the file is the same
+        save_missing_settings(&cfg, "Suite/Clock", &read_skin_settings(&cfg, "Suite/Clock")).unwrap();
+        assert_eq!(fs::read_to_string(&cfg.file).unwrap(), text);
         fs::remove_dir_all(&base).unwrap();
     }
 }

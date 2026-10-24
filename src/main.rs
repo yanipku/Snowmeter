@@ -1,21 +1,24 @@
 mod action;
+mod calc;
 mod clock;
 mod config;
 mod cpu;
+mod dollarvar;
 mod fonts;
+mod formula;
 mod ini;
+mod manager;
 mod measure;
 mod memory;
-mod monitors;
-mod manager;
 mod meter;
+mod monitors;
 mod mouse;
 mod paths;
+mod position;
+mod sectionvar;
 mod skin;
 mod textfile;
-mod calc;
-mod formula;
-mod sectionvar;
+mod wlpos;
 mod x11pos;
 
 use gtk4::prelude::*;
@@ -130,7 +133,7 @@ fn main() -> glib::ExitCode {
     // A skin with an error is reported and skipped, as Rainmeter does; the others still run
     let mut skins = Vec::new();
     for (name, file) in files {
-        match file.and_then(|file| skin::load(&file, &root, &cfg.dir)) {
+        match file.and_then(|file| manager::load_skin(&file, &root, &cfg)) {
             Ok(skin) => skins.push(skin),
             Err(e) => eprintln!("{name}: {e}"),
         }

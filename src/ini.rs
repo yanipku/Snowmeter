@@ -185,7 +185,25 @@ fn resolve_nested_in(
             if inner.len() < 2 {
                 break; // "[]" or "[#]": nothing to look up
             }
-            // The key: '#' for a variable, '&' for a section variable. Else try an earlier [
+            // The key: '#' for a variable, '&' for a section variable, '\' for a character
+            // reference. Else try an earlier [
+            if let Some(code) = inner.strip_prefix('\\') {
+                // Not a valid character: left as it is, as in Rainmeter
+                if let Some(c) = char_reference(code) {
+                    s.replace_range(start..=end, c.encode_utf8(&mut [0; 4]));
+                    next = start + c.len_utf8();
+                }
+                break;
+            }
+            // [$SkinX], [$DisplayW], …: answered by dollarvar (no nesting inside their values)
+            if let Some(name) = inner.strip_prefix('$') {
+                if let Some(value) = crate::dollarvar::lookup(name) {
+                    s.replace_range(start..=end, &value);
+                    next = start + value.len();
+                    break;
+                }
+                continue; // unknown: like Rainmeter, try an earlier [
+            }
             let is_var = inner.starts_with('#');
             if !is_var && !inner.starts_with('&') {
                 continue;
@@ -213,6 +231,23 @@ fn resolve_nested_in(
         }
         from = next;
     }
+}
+
+// The character for a character reference: "8364" in [\8364], or "x20AC" in [\x20AC]
+// (both €). As in Rainmeter, the whole text must be the number (wcstol), and it must be
+// above 0 and below 0xFFFE. Rainmeter makes one UTF-16 unit, so codes past 0xFFFF can't
+// be written; the surrogate codes 0xD800–0xDFFF aren't characters on their own, so None.
+fn char_reference(code: &str) -> Option<char> {
+    let (digits, radix) = match code.strip_prefix(['x', 'X']) {
+        Some(hex) => (hex, 16),
+        None => (code, 10),
+    };
+    // wcstol allows spaces and a sign before the number; from_str_radix allows the sign
+    let n = i64::from_str_radix(digits.trim_start(), radix).ok()?;
+    if n <= 0 || n >= 0xFFFE {
+        return None;
+    }
+    char::from_u32(n as u32)
 }
 
 // Reads a skin file and everything it @Includes.
@@ -423,6 +458,10 @@ mod tests {
         assert_eq!(resolve_nested("[#Color[#N]]", &v), "red"); // innermost first
         assert_eq!(resolve_nested("[#A]", &v), "hi"); // the value is expanded too
         assert_eq!(resolve_nested("x[#n]y[#N]z", &v), "x2y2z");
+        // Character references
+        assert_eq!(resolve_nested("[\\8364] [\\x20AC] [\\X41]", &v), "€ € A");
+        assert_eq!(resolve_nested("[\\0][\\65x][\\x][\\xD800][\\65534]", &v), "[\\0][\\65x][\\x][\\xD800][\\65534]");
+        assert_eq!(resolve_nested("[#Color[\\x32]]", &v), "red"); // [\x32] is 2
     }
 
     #[test]
