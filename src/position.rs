@@ -158,6 +158,17 @@ pub fn to_options(opts: &Options, pos: (i32, i32), size: (i32, i32), rects: &[Re
     (ax.to_option(pos.0, rx.x(), rx.width()), ay.to_option(pos.1, ry.y(), ry.height()))
 }
 
+// !Move X Y: the options for a window whose top-left corner is at (x, y), counted from
+// the primary monitor. As in Rainmeter, they become plain pixel numbers (any %, R, B or @N
+// form is dropped), with the anchor added back, since resolve() takes it off again.
+pub fn moved(opts: &Options, (x, y): (i32, i32), size: (i32, i32)) -> Options {
+    let mut ax = Axis::parse("0", 'R', 0);
+    let mut ay = Axis::parse("0", 'B', 0);
+    ax.set_anchor(&opts.anchor_x, size.0);
+    ay.set_anchor(&opts.anchor_y, size.1);
+    Options { x: (x + ax.anchor).to_string(), y: (y + ay.anchor).to_string(), ..opts.clone() }
+}
+
 // Parses the options, and pairs each axis with its monitor's rectangle: the @N one, else
 // the primary; a zero-size one if GTK gave us no monitors
 fn parse_both(opts: &Options, size: (i32, i32), rects: &[Rectangle]) -> ((Axis, Rectangle), (Axis, Rectangle)) {
@@ -388,6 +399,23 @@ mod tests {
         // Saving takes the anchor back off
         assert_eq!(to_options(&o, (1600, 900), (200, 100), &rects), ("120R".into(), "80B".into()));
         assert_eq!(to_options(&c, (860, 490), (200, 100), &rects), ("50.00000%".into(), "50.00000%".into()));
+    }
+
+    #[test]
+    fn move_bang() {
+        // Two monitors: the primary on the right, the other to its left
+        let rects = [Rectangle::new(-1280, 0, 3200, 1080), Rectangle::new(0, 0, 1920, 1080), Rectangle::new(-1280, 0, 1280, 1024)];
+        // The old form is dropped: plain numbers on the primary
+        let m = moved(&opts("10%R@2", "5B"), (30, 40), (200, 100));
+        assert_eq!((m.x.as_str(), m.y.as_str()), ("30", "40"));
+        assert_eq!(resolve(&m, (200, 100), &rects), (30, 40));
+        // Off to the left is fine: that's the other monitor
+        assert_eq!(resolve(&moved(&opts("0", "0"), (-500, 0), (200, 100)), (200, 100), &rects), (-500, 0));
+        // The anchor is added to the saved number, and resolve() takes it off again
+        let centred = Options { anchor_x: "50%".into(), anchor_y: "10B".into(), ..Options::default() };
+        let m = moved(&centred, (30, 40), (200, 100));
+        assert_eq!((m.x.as_str(), m.y.as_str()), ("130", "130"));
+        assert_eq!(resolve(&m, (200, 100), &rects), (30, 40));
     }
 
     #[test]

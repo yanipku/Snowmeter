@@ -8,6 +8,7 @@ const MAX_INCLUDES: usize = 64; // total @Include files per skin
 const MAX_VAR_DEPTH: usize = 16; // variables inside variables, this many levels deep
 const MAX_RESOLVED_LEN: usize = 64 * 1024; // longest text an option may grow to
 
+#[derive(Clone)] // a measure keeps a copy of its section, for !SetOption
 pub struct Section {
     pub name: String,                     // original capitalization
     pub options: HashMap<String, String>, // keys stored lowercase

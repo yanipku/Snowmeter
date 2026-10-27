@@ -479,9 +479,10 @@ enum Kind {
     },
 }
 
-// What a meter with DynamicVariables=1 needs to rebuild itself on every update
+// What a meter needs to rebuild itself: on every update with DynamicVariables=1, or once
+// after a bang such as !SetOption changes one of its options
 #[derive(Clone)] // Rc::make_mut copies it when a bang changes a shared one
-struct DynSource {
+struct Source {
     name: String,
     options: HashMap<String, String>, // as written in the skin, [Name] references still in place
     vars: HashMap<String, String>,
@@ -499,7 +500,11 @@ pub struct Meter {
     hidden: bool,                    // Hidden=1
     measure_idx: Vec<Option<usize>>, // MeasureName, MeasureName2, ... -> index into the measure list
     kind: Kind,
-    dynamic: Option<Rc<DynSource>>, // Some when DynamicVariables=1
+    source: Option<Rc<Source>>, // the options as written (None only in tests)
+    dynamic: bool,              // DynamicVariables=1: rebuild from `source` on every update
+    // Rebuild at the next update even if not dynamic. As in Rainmeter, where !SetOption
+    // turns DynamicVariables on until the options are read again.
+    reread_once: bool,
     mouse: MouseActions,            // LeftMouseUpAction and the like
 }
 
@@ -703,22 +708,18 @@ impl Meter {
 
         let hidden = num(section, "hidden", vars, 0.0) != 0.0;
 
-        // A rebuilt meter inherits the dynamic source; a new one creates it if asked to
-        let dynamic = match prev {
-            Some(p) => p.dynamic.clone(),
-            None => {
-                if num(section, "dynamicvariables", vars, 0.0) != 0.0 {
-                    Some(Rc::new(DynSource {
-                        name: raw.name.clone(),
-                        options: raw.options.clone(),
-                        vars: vars.clone(),
-                        base_dir: base_dir.to_path_buf(),
-                    }))
-                } else {
-                    None
-                }
-            }
+        // A rebuilt meter inherits the source; a new one makes it. DynamicVariables is read
+        // again each time, so !SetOption can turn it on or off.
+        let source = match prev {
+            Some(p) => p.source.clone(),
+            None => Some(Rc::new(Source {
+                name: raw.name.clone(),
+                options: raw.options.clone(),
+                vars: vars.clone(),
+                base_dir: base_dir.to_path_buf(),
+            })),
         };
+        let dynamic = num(section, "dynamicvariables", vars, 0.0) != 0.0;
 
         // x and y are provisional: Layout::place works out the real position
         let provisional = |p: Pos| match p {
@@ -736,30 +737,48 @@ impl Meter {
             hidden,
             measure_idx,
             kind,
+            source,
             dynamic,
+            reread_once: false,
             // From `raw`: section variables in actions wait until the click
             mouse: MouseActions::read(raw, vars),
         })
     }
 
     // !ShowMeter / !HideMeter. Like Rainmeter's Meter::Show/Hide, the Hidden option is
-    // changed too, or a meter with DynamicVariables=1 would read the old value back
-    // on its next update and undo the bang.
+    // changed too, or a rebuild (DynamicVariables=1, !SetOption) would read the old value
+    // back and undo the bang.
     pub fn set_hidden(&mut self, hidden: bool) {
         self.hidden = hidden;
-        if let Some(src) = self.dynamic.as_mut() {
+        if let Some(src) = self.source.as_mut() {
             let value = if hidden { "1" } else { "0" };
             Rc::make_mut(src).options.insert("hidden".to_string(), value.to_string());
         }
     }
 
-    // !SetVariable: a meter with DynamicVariables=1 reads its own copy of the variables
-    // on every update, so the new value goes there too. Other meters keep what they read
-    // at load, as in Rainmeter. `name` must already be lowercase, like the table keys.
+    // !SetVariable: the new value goes into the meter's own copy of the variables. A meter
+    // with DynamicVariables=1 sees it at its next update; others only when something
+    // rebuilds them (!SetOption), as in Rainmeter. `name` must already be lowercase,
+    // like the table keys.
     pub fn set_variable(&mut self, name: &str, value: &str) {
-        if let Some(src) = self.dynamic.as_mut() {
+        if let Some(src) = self.source.as_mut() {
             Rc::make_mut(src).vars.insert(name.to_string(), value.to_string());
         }
+    }
+
+    // !SetOption: changes one option as written in the skin, and rebuilds the meter at the
+    // next update, even without DynamicVariables=1 (Rainmeter's Skin::SetOption). An empty
+    // value removes the option, so its default applies again.
+    pub fn set_option(&mut self, key: &str, value: &str) {
+        let Some(src) = self.source.as_mut() else { return };
+        let options = &mut Rc::make_mut(src).options;
+        let key = key.to_lowercase(); // option names ignore case: the table keys are lowercase
+        if value.is_empty() {
+            options.remove(&key);
+        } else {
+            options.insert(key, value.to_string());
+        }
+        self.reread_once = true;
     }
 
     // For !ToggleMeter
@@ -778,8 +797,9 @@ impl Meter {
         values: &Values,
         geom: &Geometry,
     ) {
-        // DynamicVariables=1: read the options again with the latest values
-        if let Some(src) = self.dynamic.clone() {
+        // DynamicVariables=1 (or a bang asked for it once): read the options again with
+        // the latest values
+        if let Some(src) = self.source.clone().filter(|_| self.dynamic || self.reread_once) {
             let raw = Section { name: src.name.clone(), options: src.options.clone() };
             if let Some(fresh) = Meter::build(
                 &raw,
@@ -792,6 +812,7 @@ impl Meter {
             ) {
                 *self = fresh;
             }
+            self.reread_once = false; // a fresh meter starts with false; a failed rebuild needs it too
         }
 
         // Graphs record the fresh values
@@ -1121,7 +1142,9 @@ mod tests {
             hidden: false,
             measure_idx: Vec::new(),
             kind: Kind::Bar { w, h, color: WHITE, vertical: false },
-            dynamic: None,
+            source: None,
+            dynamic: false,
+            reread_once: false,
             mouse: MouseActions::default(),
         }
     }
@@ -1281,6 +1304,49 @@ mod tests {
             .expect("a String meter should be built");
         let Kind::Text { template, .. } = &m.kind else { panic!("expected a String meter") };
         assert_eq!(template, "");
+    }
+
+    #[test]
+    fn set_option_rebuilds_a_static_meter_once() {
+        let mut options = HashMap::new();
+        options.insert("meter".to_string(), "String".to_string());
+        options.insert("text".to_string(), "Old #Word#".to_string());
+        let section = Section { name: "Label".to_string(), options };
+        let mut vars = HashMap::new();
+        vars.insert("word".to_string(), "one".to_string());
+        let mut meters = vec![
+            Meter::from_section(&section, &vars, &[], &HashMap::new(), &HashMap::new(), Path::new("."))
+                .expect("a String meter should be built"),
+        ];
+        let template = |m: &Meter| match &m.kind {
+            Kind::Text { template, .. } => template.clone(),
+            _ => panic!("expected a String meter"),
+        };
+        assert_eq!(template(&meters[0]), "Old one");
+
+        // Option names ignore case; the change shows after the next update
+        meters[0].set_option("TEXT", "New #Word#");
+        assert_eq!(template(&meters[0]), "Old one");
+        update_all(&mut meters, &[], &HashMap::new());
+        assert_eq!(template(&meters[0]), "New one");
+        assert!(!meters[0].dynamic && !meters[0].reread_once);
+
+        // A !SetVariable from before is seen once something rebuilds the meter
+        meters[0].set_variable("word", "two");
+        update_all(&mut meters, &[], &HashMap::new());
+        assert_eq!(template(&meters[0]), "New one"); // static: no rebuild
+        meters[0].set_option("Text", "");
+        update_all(&mut meters, &[], &HashMap::new());
+        assert_eq!(template(&meters[0]), ""); // empty value: the option is gone
+
+        // !SetOption DynamicVariables 1 makes it dynamic from then on
+        meters[0].set_option("Text", "#Word#");
+        meters[0].set_option("DynamicVariables", "1");
+        update_all(&mut meters, &[], &HashMap::new());
+        assert!(meters[0].dynamic);
+        meters[0].set_variable("word", "three");
+        update_all(&mut meters, &[], &HashMap::new());
+        assert_eq!(template(&meters[0]), "three");
     }
 
     #[test]

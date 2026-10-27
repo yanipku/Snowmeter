@@ -1,4 +1,6 @@
+use crate::ini::{self, Section};
 use crate::measure::Measure;
+use std::collections::HashMap;
 use chrono::{DateTime, FixedOffset, Local, Utc};
 use std::fmt::Write;
 
@@ -98,6 +100,18 @@ impl TimeMeasure {
         m
     }
 
+    // A Time measure from its section: Format (empty: the default text, and the value is
+    // a timestamp) and TimeZone (hours from UTC; missing: this computer's local time)
+    pub fn from_options(section: &Section, vars: &HashMap<String, String>) -> TimeMeasure {
+        let format = section.options.get("format").map(|v| ini::resolve(v, vars)).unwrap_or_default();
+        let tz = section
+            .options
+            .get("timezone")
+            .map(|v| ini::resolve(v, vars))
+            .and_then(|v| v.trim().parse::<f64>().ok());
+        TimeMeasure::new(&section.name, &format, tz)
+    }
+
     fn now(&self) -> DateTime<FixedOffset> {
         match self.offset {
             Some(off) => Utc::now().with_timezone(&off),
@@ -135,6 +149,11 @@ impl Measure for TimeMeasure {
 
     fn text(&self) -> String {
         self.text.clone()
+    }
+
+    // Time keeps nothing between updates, so a fresh one is as good as the old one
+    fn reread(&mut self, section: &Section, vars: &HashMap<String, String>) {
+        *self = TimeMeasure::from_options(section, vars);
     }
 }
 

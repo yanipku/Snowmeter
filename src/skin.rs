@@ -1,5 +1,5 @@
 use crate::ini;
-use crate::measure::{Measure, Ranged};
+use crate::measure::{number_option, Measure, Ranged, Switch};
 use crate::meter::{self, Color, Layout, Meter};
 use crate::mouse::{MouseActions, MouseEvent};
 use crate::{calc, clock, cpu, fonts, formula, memory};
@@ -57,6 +57,13 @@ impl Skin {
     pub fn meter_mut(&mut self, name: &str) -> Option<&mut Meter> {
         self.meters.iter_mut().find(|m| m.name().eq_ignore_ascii_case(name))
     }
+
+    // The Disabled/Paused state of the measure called `name`, for bangs like
+    // !DisableMeasure. Names ignore case, as in Rainmeter.
+    pub fn measure_switch(&mut self, name: &str) -> Option<&mut Switch> {
+        let m = self.measures.iter_mut().find(|m| m.name().eq_ignore_ascii_case(name))?;
+        m.switch_mut()
+    }
 }
 
 // Window size = bounding box of all meters plus a small margin
@@ -69,32 +76,6 @@ pub fn window_size(meters: &[Meter], measures: &[Box<dyn Measure>]) -> (i32, i32
     }
     let side = |v: f64| (v + 10.0).ceil().clamp(50.0, MAX_WINDOW_SIDE) as i32;
     (side(right), side(bottom))
-}
-
-// Reads a number option such as MinValue. It may be a (formula).
-// Bad values are reported and ignored.
-fn number_option(
-    section: &ini::Section,
-    key: &str,
-    vars: &HashMap<String, String>,
-) -> Option<f64> {
-    let raw = section.options.get(key)?;
-    let text = ini::resolve(raw, vars);
-    match formula::parse_number(&text) {
-        Ok(n) => Some(n),
-        Err(e) => {
-            let hint = if text.contains('[') {
-                " (references to other measures need DynamicVariables=1)"
-            } else {
-                ""
-            };
-            eprintln!(
-                "[{}] cannot read {}={}: {}{}, ignoring it",
-                section.name, key, text, e, hint
-            );
-            None
-        }
-    }
 }
 
 // The variables as one section sees them: everything, plus #CURRENTSECTION#
@@ -258,40 +239,11 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         };
         let vars = section_vars(&vars, &section.name);
         let kind = ini::resolve(kind, &vars);
-        let made: Box<dyn Measure> = match kind.to_lowercase().as_str() {
+        let inner: Box<dyn Measure> = match kind.to_lowercase().as_str() {
             "cpu" => Box::new(cpu::CpuMeasure::new(&section.name)),
             "physicalmemory" => Box::new(memory::MemoryMeasure::new(&section.name)),
-            "time" => {
-                let format = section
-                    .options
-                    .get("format")
-                    .map(|v| ini::resolve(v, &vars))
-                    .unwrap_or_default(); // empty: the clock uses its default text, and its value is a timestamp
-                let tz = section
-                    .options
-                    .get("timezone")
-                    .map(|v| ini::resolve(v, &vars))
-                    .and_then(|v| v.trim().parse::<f64>().ok());
-                Box::new(clock::TimeMeasure::new(&section.name, &format, tz))
-            }
-            "calc" => {
-                let formula = section
-                    .options
-                    .get("formula")
-                    .map(|v| ini::resolve(v, &vars))
-                    .unwrap_or_else(|| "0".to_string());
-                let low = number_option(section, "lowbound", &vars).unwrap_or(0.0);
-                let high = number_option(section, "highbound", &vars).unwrap_or(100.0);
-                let update_random =
-                    number_option(section, "updaterandom", &vars).unwrap_or(0.0) != 0.0;
-                Box::new(calc::CalcMeasure::new(
-                    &section.name,
-                    &formula,
-                    low,
-                    high,
-                    update_random,
-                ))
-            }
+            "time" => Box::new(clock::TimeMeasure::from_options(section, &vars)),
+            "calc" => Box::new(calc::CalcMeasure::from_options(section, &vars)),
             other => {
                 eprintln!(
                     "[{}] unsupported measure type '{}', skipping",
@@ -301,28 +253,15 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
             }
         };
 
-        // MinValue / MaxValue override the measure's own range. With DynamicVariables=1
-        // their text is kept and read again on every update; otherwise they are fixed numbers.
-        let dynamic = number_option(section, "dynamicvariables", &vars).unwrap_or(0.0) != 0.0;
-        if dynamic {
-            let source = |key: &str| {
-                section.options.get(key).map(|v| ini::resolve_nested(&ini::resolve(v, &vars), &vars))
-            };
-            let (min_src, max_src) = (source("minvalue"), source("maxvalue"));
-            if min_src.is_some() || max_src.is_some() {
-                measures.push(Box::new(Ranged::dynamic(made, min_src, max_src)));
-            } else {
-                measures.push(made);
-            }
-        } else {
-            let min = number_option(section, "minvalue", &vars);
-            let max = number_option(section, "maxvalue", &vars);
-            if min.is_some() || max.is_some() {
-                measures.push(Box::new(Ranged::new(made, min, max)));
-            } else {
-                measures.push(made);
-            }
-        }
+        // MinValue / MaxValue override the measure's own range. Every measure gets a
+        // Ranged, so a later !SetOption can add them.
+        let mut ranged = Ranged::wrap(inner);
+        ranged.read_range(section, &vars);
+
+        // Disabled= / Paused=: the Switch goes outside, so bangs can reach it (switch_mut)
+        let flag = |key: &str| number_option(section, key, &vars).unwrap_or(0.0) != 0.0;
+        let switch = Switch::new(Box::new(ranged), flag("disabled"), flag("paused"));
+        measures.push(Box::new(switch.with_source(section, &vars)));
     }
 
     // Like Rainmeter, evaluate every measure once at load, so values exist from the start

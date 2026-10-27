@@ -12,7 +12,7 @@ The goal is for Snowmeter to work on all three.
 ## Progress compared with Rainmeter for Windows
 
 - Overall estimate: **10–15%**
-- Roadmap checklist: 54 / 151 ≈ **36%**
+- Roadmap checklist: 58 / 153 ≈ **38%**
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
   - X11: 4 / 7 ≈ **57%**
@@ -21,17 +21,21 @@ The goal is for Snowmeter to work on all three.
 
 ## Next up
 1. [ ] Remember each skin's position and settings (our own Rainmeter.ini; Wayland limits window placement)
-2. [ ] Right-click menu
-3. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
-4. [ ] The rest of the core bangs: `!SetOption`, `!EnableMeasure`/`!DisableMeasure`/`!PauseMeasure`, `!Move`
-5. [ ] `[Rainmeter]` actions: `OnRefreshAction`, `OnUpdateAction`, `OnCloseAction`, `OnFocusAction`/`OnUnfocusAction`
-6. [ ] The rest of the `[Rainmeter]` section: `Background` image with `BackgroundMode` 0/1/3/4 and `BackgroundMargins`, `SolidColor2`/`GradientAngle`, `BevelType`, `SkinWidth`/`SkinHeight`, `DragMargins`, `DefaultUpdateDivider`, `ContextTitle`/`ContextAction`, `Group`, `AccurateText`, `Blur`/`BlurRegion` (see "[Rainmeter] section" below)
-7. [ ] Running programs from actions (safely: launched directly, never through a shell)
-8. [ ] Tray icon (GNOME hides tray icons without an extension)
-9. [ ] Manage window: a GUI for Snowmeter outside the terminal, like Rainmeter's Manage dialog (see "Manage window" below)
-10. [ ] SkinInstaller: install `.rmskin` packages (see "Skin installer" below)
-
-The core comes first: new meters and measures wait until items 1–10 are done.
+2. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
+3. [x] The rest of the core bangs: `!SetOption`, `!EnableMeasure`/`!DisableMeasure`/`!PauseMeasure`, `!Move`
+4. [ ] `[Rainmeter]` actions: `OnRefreshAction`, `OnUpdateAction`, `OnCloseAction`, `OnFocusAction`/`OnUnfocusAction`
+5. [ ] The rest of the `[Rainmeter]` section: `Background` image with `BackgroundMode` 0/1/3/4 and `BackgroundMargins`, `SolidColor2`/`GradientAngle`, `BevelType`, `SkinWidth`/`SkinHeight`, `DragMargins`, `DefaultUpdateDivider`, `ContextTitle`/`ContextAction`, `Group`, `AccurateText`, `Blur`/`BlurRegion` (see "[Rainmeter] section" below)
+6. [ ] The rest of "Interaction": `MouseOverAction`/`MouseLeaveAction`, scroll actions, tooltips, the other bangs (`!WriteKeyValue`, the meter-group bangs, `!SetOptionGroup`, `!UpdateMeter`/`!UpdateMeasure`, `!CommandMeasure`), `IfCondition`, `IfAbove`/`IfBelow`/`IfEqual`, `IfMatch`, `OnChangeAction` (see "Interaction" below)
+7. [ ] The rest of the general measure options: `InvertMeasure`, `UpdateDivider`, `Substitute`/`RegExpSubstitute`, `AverageSize`, `Group` (see "General measure options" below)
+8. [ ] The rest of the general meter options: `SolidColor2`/`GradientAngle`, `BevelType`/`BevelColor`/`BevelColor2`, `AntiAlias`, `TransformationMatrix`, `UpdateDivider`, `Group`, `Container` (see "General meter options" below)
+9. [ ] Running programs from actions (safely: launched directly, never through a shell)
+10. [ ] The missing measures, and the missing options of the measures we have (see "Measures" below)
+11. [ ] Finish the meters we have: String, Bar, Image, Line, Histogram (see their sections below)
+12. [ ] The missing meter types: `Shape`, `Roundline`, `Rotator`, `Bitmap`, `Button`, `Svg`, `TextEdit` (see "Missing meter types" below)
+13. [ ] Right-click menu (with `ContextTitle`/`ContextAction`, and `!SetOption Rainmeter Context…`)
+14. [ ] Tray icon (GNOME hides tray icons without an extension)
+15. [ ] Manage window: a GUI for Snowmeter outside the terminal, like Rainmeter's Manage dialog (see "Manage window" below)
+16. [ ] SkinInstaller: install `.rmskin` packages (see "Skin installer" below)
 
 ---
 
@@ -126,12 +130,14 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [ ] Bangs: `!WriteKeyValue`
 - [x] Bangs: `!ShowMeter`, `!HideMeter`, `!ToggleMeter` (take effect at the next update, as in Rainmeter)
 - [ ] Bangs: `!ShowMeterGroup`, `!HideMeterGroup`, `!ToggleMeterGroup`
-- [ ] Bangs: `!SetOption`, `!SetOptionGroup`
+- [x] Bangs: `!SetOption` on meters and measures (read again at the next update, as in Rainmeter; a measure keeps its state, such as the Calc counter). `[Rainmeter]` (`ContextTitle`/`ContextAction`) waits for the right-click menu
+- [ ] Bangs: `!SetOptionGroup`
 - [x] Bangs: `!Update` (restarts the Update timer), `!Redraw`
 - [x] Bangs: `!Refresh` (this skin only; reloads the file, restarts the timer, keeps the old skin on an error)
 - [ ] Bangs: `!UpdateMeter`, `!UpdateMeasure`
-- [ ] Bangs: `!EnableMeasure`, `!DisableMeasure`, `!PauseMeasure`, `!CommandMeasure`
-- [ ] Bangs: `!Move`
+- [x] Bangs: `!EnableMeasure`, `!DisableMeasure`, `!ToggleMeasure`, `!PauseMeasure`, `!UnpauseMeasure`, `!TogglePauseMeasure` (seen at the next update; disabled = 0, paused = last value)
+- [ ] Bangs: `!CommandMeasure`
+- [x] Bangs: `!Move` (plain pixel numbers from the primary monitor; KeepOnScreen applies, as in Rainmeter)
 - [x] Bangs for the window settings: `!ZPos`, `!Draggable`, `!ClickThrough`, `!KeepOnScreen`, `!SnapEdges` (1, 0, or -1 to toggle; the new value is saved to the settings file)
 - [x] Bangs: `!ActivateConfig`, `!DeactivateConfig`, `!ToggleConfig`
 - [x] Bangs aimed at other skins: an extra config argument, or `*` for all (Rainmeter's DoBang rule)
@@ -147,7 +153,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [ ] `UpdateDivider` (reverted earlier)
 - [ ] `Substitute` / `RegExpSubstitute`
 - [ ] `AverageSize`
-- [ ] `Disabled` / `Paused`
+- [x] `Disabled` / `Paused`
 - [ ] `Group`
 
 ## Measures

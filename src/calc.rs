@@ -1,5 +1,7 @@
 use crate::formula::{self, Env, Expr, Suffix};
-use crate::measure::{fraction_in, Measure, Values};
+use crate::ini::{self, Section};
+use crate::measure::{fraction_in, number_option, Measure, Values};
+use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 // A small xorshift random number generator: fine for Random in skins, not for security
@@ -64,6 +66,7 @@ impl Env for CalcEnv<'_> {
 
 pub struct CalcMeasure {
     name: String,
+    formula: String,    // as read, to tell whether a reread changed it
     expr: Option<Expr>, // None if the formula couldn't be read
     value: f64,
     low: f64,
@@ -90,6 +93,7 @@ impl CalcMeasure {
         let random = rng.between(low, high);
         CalcMeasure {
             name: name.to_string(),
+            formula: formula.to_string(),
             expr,
             value: 0.0,
             low,
@@ -102,6 +106,15 @@ impl CalcMeasure {
             seen_max: 1.0, // Rainmeter's default range before any value widens it
             failing: false,
         }
+    }
+
+    // A Calc measure from its section: Formula, LowBound, HighBound, UpdateRandom
+    pub fn from_options(section: &Section, vars: &HashMap<String, String>) -> CalcMeasure {
+        let formula = section.options.get("formula").map(|v| ini::resolve(v, vars));
+        let low = number_option(section, "lowbound", vars).unwrap_or(0.0);
+        let high = number_option(section, "highbound", vars).unwrap_or(100.0);
+        let update_random = number_option(section, "updaterandom", vars).unwrap_or(0.0) != 0.0;
+        CalcMeasure::new(&section.name, formula.as_deref().unwrap_or("0"), low, high, update_random)
     }
 }
 
@@ -155,6 +168,24 @@ impl Measure for CalcMeasure {
     fn text(&self) -> String {
         format_number(self.value)
     }
+
+    // As in Rainmeter's MeasureCalc::ReadOptions: the counter and the range seen so far
+    // carry on; a new Random is drawn only if the formula, the bounds or UpdateRandom changed
+    fn reread(&mut self, section: &Section, vars: &HashMap<String, String>) {
+        let fresh = CalcMeasure::from_options(section, vars);
+        let changed = fresh.formula != self.formula
+            || fresh.low != self.low
+            || fresh.high != self.high
+            || fresh.update_random != self.update_random;
+        if !changed {
+            return;
+        }
+        self.formula = fresh.formula;
+        self.expr = fresh.expr;
+        (self.low, self.high, self.update_random) = (fresh.low, fresh.high, fresh.update_random);
+        self.random = self.rng.between(self.low, self.high);
+        self.failing = false;
+    }
 }
 
 // 5 -> "5", 3.14159265 -> "3.14159", 0.5 -> "0.5"
@@ -165,5 +196,39 @@ fn format_number(v: f64) -> String {
         "0".to_string()
     } else {
         s.to_string()
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn section(formula: &str) -> Section {
+        let mut options = HashMap::new();
+        options.insert("measure".to_string(), "Calc".to_string());
+        options.insert("formula".to_string(), formula.to_string());
+        Section { name: "Calc".to_string(), options }
+    }
+
+    #[test]
+    fn reread_keeps_the_counter() {
+        let vars = HashMap::new();
+        let mut m = CalcMeasure::from_options(&section("Counter"), &vars);
+        m.update();
+        m.update();
+        assert_eq!(m.value(), 2.0);
+
+        // A new formula: the counter carries on, as in Rainmeter
+        m.reread(&section("Counter * 10"), &vars);
+        m.update();
+        assert_eq!(m.value(), 30.0);
+        assert_eq!(m.range(), (0.0, 30.0)); // the range seen so far is kept too
+
+        // Nothing changed: Random stays the same
+        let mut r = CalcMeasure::from_options(&section("Random"), &vars);
+        r.update();
+        let before = r.value();
+        r.reread(&section("Random"), &vars);
+        r.update();
+        assert_eq!(r.value(), before);
     }
 }

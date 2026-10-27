@@ -430,11 +430,36 @@ impl SkinWindow {
                 }
                 ("ClickThrough", bit(on))
             }
+            WindowBang::Move(x, y) => return self.move_bang((x, y)),
         };
         let Some(manager) = self.manager.upgrade() else { return };
         let config = self.skin.borrow().config.clone();
         if let Err(e) = config::save_setting(&manager.cfg, &config, key, &value) {
             eprintln!("Can't save {key}: {e}");
+        }
+    }
+
+    // !Move X Y: puts the skin's top-left corner at (x, y), counted from the primary
+    // monitor, and saves WindowX/WindowY as plain numbers, as Rainmeter does. KeepOnScreen
+    // applies, but snapping doesn't (Rainmeter snaps only while dragging).
+    fn move_bang(&self, pos: (i32, i32)) {
+        let Some(manager) = self.manager.upgrade() else { return };
+        let config = self.skin.borrow().config.clone();
+        let size = self.size();
+        let opts = crate::position::moved(&config::read_position(&manager.cfg, &config), pos, size);
+        let mut pos = crate::position::resolve(&opts, size, &crate::monitors::monitor_rects());
+        pos = self.adjust_move(pos, false);
+        // Only one of these does anything: layer-shell windows on Wayland, else X11
+        if crate::wlpos::position(&self.window).is_some() {
+            crate::wlpos::move_to(&self.window, pos);
+        } else {
+            crate::x11pos::move_to(&self.window, pos);
+        }
+        // The move makes X11 report a new position: this stops that from saving it again
+        // in the old form
+        self.saved_position.set(Some(pos));
+        if let Err(e) = config::save_position(&manager.cfg, &config, &opts.x, &opts.y) {
+            eprintln!("Can't save the skin's position: {e}");
         }
     }
 

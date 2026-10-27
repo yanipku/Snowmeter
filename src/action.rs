@@ -15,8 +15,8 @@ pub enum After {
     Window(WindowBang), // a bang that changes a window setting: only the window can do it
 }
 
-// !ZPos, !Draggable, !ClickThrough, !KeepOnScreen, !SnapEdges. The numbers are the
-// bang's argument: 1 on, 0 off, -1 toggle (any other number counts as on).
+// !ZPos, !Draggable, !ClickThrough, !KeepOnScreen, !SnapEdges, !Move. For the settings, the
+// number is the bang's argument: 1 on, 0 off, -1 toggle (any other number counts as on).
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum WindowBang {
     ZPos(ZPos),
@@ -24,6 +24,7 @@ pub enum WindowBang {
     ClickThrough(i32),
     KeepOnScreen(i32),
     SnapEdges(i32),
+    Move(i32, i32), // !Move X Y: where the skin's top-left corner goes (primary monitor = 0,0)
 }
 
 // A setting's new value from one of those numbers and its value now
@@ -53,8 +54,11 @@ fn arg_count(bang: &str) -> Option<usize> {
     match bang {
         "redraw" | "update" | "refresh" => Some(0),
         "showmeter" | "hidemeter" | "togglemeter" => Some(1),
+        "enablemeasure" | "disablemeasure" | "togglemeasure" => Some(1),
+        "pausemeasure" | "unpausemeasure" | "togglepausemeasure" => Some(1),
         "zpos" | "changezpos" | "draggable" | "clickthrough" | "keeponscreen" | "snapedges" => Some(1),
-        "setvariable" => Some(2),
+        "setvariable" | "move" => Some(2),
+        "setoption" => Some(3),
         _ => None,
     }
 }
@@ -96,6 +100,42 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
             meter.set_hidden(hide);
             After::Nothing // like Rainmeter: seen at the next update or !Redraw
         }
+        "enablemeasure" | "disablemeasure" | "togglemeasure" | "pausemeasure" | "unpausemeasure"
+        | "togglepausemeasure" => {
+            let Some(measure_name) = args.first() else {
+                eprintln!("!{name}: needs the name of a measure");
+                return After::Nothing;
+            };
+            let Some(switch) = skin.measure_switch(measure_name) else {
+                eprintln!("!{name}: [{measure_name}] not found");
+                return After::Nothing;
+            };
+            match lower.as_str() {
+                "enablemeasure" => switch.set_disabled(false),
+                "disablemeasure" => switch.set_disabled(true),
+                "togglemeasure" => switch.set_disabled(!switch.is_disabled()),
+                "pausemeasure" => switch.set_paused(true),
+                "unpausemeasure" => switch.set_paused(false),
+                _ => switch.set_paused(!switch.is_paused()), // togglepausemeasure
+            }
+            After::Nothing // like Rainmeter: seen at the next update
+        }
+        "setoption" => {
+            let [section, key, value, ..] = args.as_slice() else {
+                eprintln!("!{name}: needs a section, an option and a value");
+                return After::Nothing;
+            };
+            if let Some(meter) = skin.meter_mut(section) {
+                meter.set_option(key, value);
+            } else if let Some(switch) = skin.measure_switch(section) {
+                switch.set_option(key, value);
+            } else if section.eq_ignore_ascii_case("rainmeter") {
+                println!("!{name} on [Rainmeter] isn't supported yet");
+            } else {
+                eprintln!("!{name}: [{section}] not found");
+            }
+            After::Nothing // like Rainmeter: seen at the next update
+        }
         "setvariable" => {
             let [var, value, ..] = args.as_slice() else {
                 eprintln!("!{name}: needs a variable name and a value");
@@ -106,6 +146,11 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
             let value = &variable_value(value);
             for meter in &mut skin.meters {
                 meter.set_variable(&var, value);
+            }
+            for measure in &mut skin.measures {
+                if let Some(switch) = measure.switch_mut() {
+                    switch.set_variable(&var, value);
+                }
             }
             skin.vars.insert(var, value.clone());
             After::Nothing // like Rainmeter: seen at the next update
@@ -138,6 +183,15 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
                 "snapedges" => WindowBang::SnapEdges(n),
                 _ => WindowBang::ZPos(ZPos::from_number(n)), // !ChangeZPos is the old name
             })
+        }
+        "move" => {
+            let [x, y, ..] = args.as_slice() else {
+                eprintln!("!{name}: needs X and Y");
+                return After::Nothing;
+            };
+            // ParseInt again: a number or a (formula), the fraction dropped; else 0
+            let int = |a: &str| formula::parse_number(a).map_or(0, |n| n as i32);
+            After::Window(WindowBang::Move(int(x), int(y)))
         }
         _ => {
             println!("!{name} isn't supported yet");
@@ -310,6 +364,15 @@ mod tests {
         assert_eq!(target("!Draggable 0"), Target::This);
         assert_eq!(target("!ZPos 1 *"), Target::All);
         assert_eq!(target("!ClickThrough -1 Other"), config("Other"));
+        // The measure bangs take one
+        assert_eq!(target("!DisableMeasure CPU"), Target::This);
+        assert_eq!(target("!TogglePauseMeasure CPU Other"), config("Other"));
+        // !SetOption takes three
+        assert_eq!(target("!SetOption Label Text Hi"), Target::This);
+        assert_eq!(target(r#"!SetOption Label Text "" Other"#), config("Other"));
+        // !Move takes two
+        assert_eq!(target("!Move 10 20"), Target::This);
+        assert_eq!(target("!Move 10 20 Other"), config("Other"));
     }
 
     #[test]
