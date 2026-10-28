@@ -7,7 +7,9 @@ Where the desktop matters, an item has a box for each of three kinds of desktop.
 The goal is for Snowmeter to work on all three.
 - **X11**: any X11 session with a window manager (tested in Xephyr with openbox).
 - **Wayland (layer-shell)**: Wayland desktops with the layer-shell protocol: KDE, sway, Hyprland, labwc, … (tested in labwc). Skins are layer windows, which we place and drag ourselves.
-- **GNOME (Wayland)**: no layer-shell, so skins are normal windows that GNOME places. Untested. (GNOME on X11 counts as X11.)
+- **GNOME (Wayland)**: no layer-shell, so Snowmeter restarts itself on X11 through XWayland and uses the X11 code. Without XWayland, skins are normal windows that GNOME places. Untested. (GNOME on X11 counts as X11.)
+
+At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWayland, then plain Wayland windows, and prints which one it uses. A `GDK_BACKEND` set by the user always wins. (In WSLg, X11 windows get a Windows drop shadow; that is WSLg, not Snowmeter.)
 
 ## Progress compared with Rainmeter for Windows
 
@@ -22,20 +24,19 @@ The goal is for Snowmeter to work on all three.
 ## Next up
 1. [ ] Remember each skin's position and settings (our own Rainmeter.ini; Wayland limits window placement)
 2. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
-3. [x] The rest of the core bangs: `!SetOption`, `!EnableMeasure`/`!DisableMeasure`/`!PauseMeasure`, `!Move`
-4. [ ] `[Rainmeter]` actions: `OnRefreshAction`, `OnUpdateAction`, `OnCloseAction`, `OnFocusAction`/`OnUnfocusAction`
-5. [ ] The rest of the `[Rainmeter]` section: `Background` image with `BackgroundMode` 0/1/3/4 and `BackgroundMargins`, `SolidColor2`/`GradientAngle`, `BevelType`, `SkinWidth`/`SkinHeight`, `DragMargins`, `DefaultUpdateDivider`, `ContextTitle`/`ContextAction`, `Group`, `AccurateText`, `Blur`/`BlurRegion` (see "[Rainmeter] section" below)
-6. [ ] The rest of "Interaction": `MouseOverAction`/`MouseLeaveAction`, scroll actions, tooltips, the other bangs (`!WriteKeyValue`, the meter-group bangs, `!SetOptionGroup`, `!UpdateMeter`/`!UpdateMeasure`, `!CommandMeasure`), `IfCondition`, `IfAbove`/`IfBelow`/`IfEqual`, `IfMatch`, `OnChangeAction` (see "Interaction" below)
-7. [ ] The rest of the general measure options: `InvertMeasure`, `UpdateDivider`, `Substitute`/`RegExpSubstitute`, `AverageSize`, `Group` (see "General measure options" below)
-8. [ ] The rest of the general meter options: `SolidColor2`/`GradientAngle`, `BevelType`/`BevelColor`/`BevelColor2`, `AntiAlias`, `TransformationMatrix`, `UpdateDivider`, `Group`, `Container` (see "General meter options" below)
-9. [ ] Running programs from actions (safely: launched directly, never through a shell)
-10. [ ] The missing measures, and the missing options of the measures we have (see "Measures" below)
-11. [ ] Finish the meters we have: String, Bar, Image, Line, Histogram (see their sections below)
-12. [ ] The missing meter types: `Shape`, `Roundline`, `Rotator`, `Bitmap`, `Button`, `Svg`, `TextEdit` (see "Missing meter types" below)
-13. [ ] Right-click menu (with `ContextTitle`/`ContextAction`, and `!SetOption Rainmeter Context…`)
-14. [ ] Tray icon (GNOME hides tray icons without an extension)
-15. [ ] Manage window: a GUI for Snowmeter outside the terminal, like Rainmeter's Manage dialog (see "Manage window" below)
-16. [ ] SkinInstaller: install `.rmskin` packages (see "Skin installer" below)
+3. [ ] `[Rainmeter]` actions: `OnRefreshAction`, `OnUpdateAction`, `OnCloseAction`, `OnFocusAction`/`OnUnfocusAction`
+4. [ ] The rest of the `[Rainmeter]` section: `Background` image with `BackgroundMode` 0/1/3/4 and `BackgroundMargins`, `SolidColor2`/`GradientAngle`, `BevelType`, `SkinWidth`/`SkinHeight`, `DragMargins`, `DefaultUpdateDivider`, `ContextTitle`/`ContextAction`, `Group`, `AccurateText`, `Blur`/`BlurRegion` (see "[Rainmeter] section" below)
+5. [ ] The rest of "Interaction": `MouseOverAction`/`MouseLeaveAction`, scroll actions, tooltips, the other bangs (`!WriteKeyValue`, the meter-group bangs, `!SetOptionGroup`, `!UpdateMeter`/`!UpdateMeasure`, `!CommandMeasure`), `IfCondition`, `IfAbove`/`IfBelow`/`IfEqual`, `IfMatch`, `OnChangeAction` (see "Interaction" below)
+6. [ ] The rest of the general measure options: `InvertMeasure`, `UpdateDivider`, `Substitute`/`RegExpSubstitute`, `AverageSize`, `Group` (see "General measure options" below)
+7. [ ] The rest of the general meter options: `SolidColor2`/`GradientAngle`, `BevelType`/`BevelColor`/`BevelColor2`, `AntiAlias`, `TransformationMatrix`, `UpdateDivider`, `Group`, `Container` (see "General meter options" below)
+8. [ ] Running programs from actions (safely: launched directly, never through a shell)
+9. [ ] The missing measures, and the missing options of the measures we have (see "Measures" below)
+10. [ ] Finish the meters we have: String, Bar, Image, Line, Histogram (see their sections below)
+11. [ ] The missing meter types: `Shape`, `Roundline`, `Rotator`, `Bitmap`, `Button`, `Svg`, `TextEdit` (see "Missing meter types" below)
+12. [ ] Right-click menu (with `ContextTitle`/`ContextAction`, and `!SetOption Rainmeter Context…`)
+13. [ ] Tray icon (GNOME hides tray icons without an extension)
+14. [ ] Manage window: a GUI for Snowmeter outside the terminal, like Rainmeter's Manage dialog (see "Manage window" below)
+15. [ ] SkinInstaller: install `.rmskin` packages (see "Skin installer" below)
 
 ---
 
@@ -66,8 +67,8 @@ The goal is for Snowmeter to work on all three.
 - [ ] Remember each skin's position and settings (Rainmeter.ini) 🟡 `Active=` (no skin on the command line = last time's skins); `WindowX`/`WindowY` with Rainmeter's `%`/`R`/`B`/`@N` forms, saved in the same form (500 ms after a move, and on close/refresh), and `AnchorX`/`AnchorY`. Still to do: keeping the anchor in place when `DynamicWindowSize` resizes the skin, formulas in `WindowX`/`WindowY`, the other settings
   - [x] X11: read and set through Xlib (`x11pos.rs`)
   - [x] Wayland (layer-shell): monitor + margins (`wlpos.rs`)
-  - [ ] GNOME ❌ a Wayland program can't see or choose its window position; see the idea below
-  - Idea for GNOME (no layer-shell): one transparent window per monitor (`fullscreen_on_monitor`) with an input region covering only the skins, so clicks elsewhere pass through, and every skin drawn inside it at its own x,y. Costs: the window shows in Alt+Tab and the overview, all skins on a monitor stack together (no per-skin on top / on desktop), clicking a skin takes focus, no skin across two monitors, and GNOME treats fullscreen windows specially. To keep this open, skins should draw into a target with an offset instead of assuming they own a whole window.
+  - [ ] GNOME: through XWayland, as X11 (untested). Long-term plan below
+  - Plan for GNOME (no layer-shell), as Desktop Icons NG does it: one transparent, borderless, monitor-sized window per monitor (not fullscreen, which would cover the top bar), with an input region covering only the skins, so clicks elsewhere pass through, and every skin drawn inside it at its own x,y (we choose the skin positions). Paired with a small GNOME Shell extension (JavaScript) that puts each window on its monitor, keeps it on the desktop layer, and hides it from Alt+Tab, the dock and the overview: Mutter gives those powers only to extensions. Without the extension: limited mode, where skins show and can be clicked but GNOME may put the window on the wrong monitor or below the top bar, it stacks like a normal app, and it shows in Alt+Tab. Costs either way: all skins on a monitor stack together (no per-skin on top / on desktop), clicking a skin takes focus, no skin across two monitors. To keep this open, skins should draw into a target with an offset instead of assuming they own a whole window.
 - [x] Several skins at once (several on the command line; one with an error is skipped)
 - [x] Load, unload and refresh skins
 - [ ] Right-click menu
@@ -78,7 +79,7 @@ The goal is for Snowmeter to work on all three.
 - [ ] Always on top, on the desktop, normal 🟡 `AlwaysOnTop=` from Rainmeter.ini works. `!ZPos` changes it while the skin runs. Still to do: the skin's own `[Rainmeter]` defaults
   - [x] X11: `_NET_WM_STATE_ABOVE`/`BELOW`, sent once the window manager sets `WM_STATE`. No separate "topmost" or "on desktop" level (2 = 1, -2 = -1). Skins are also left out of the taskbar and pager
   - [x] Wayland (layer-shell): layers -2/-1/0 → Bottom, 1 → Top, 2 → Overlay. "Normal" can't exist: layer windows are never mixed with normal ones
-  - [ ] GNOME ❌ no way for a program to keep its window above or below others
+  - [ ] GNOME: through XWayland, as X11 (untested; Mutter may honour "above" loosely)
 - [x] Click-through, Draggable, SnapEdges, KeepOnScreen. Missing window settings are written to the settings file when a skin loads, as Rainmeter does
   - `Draggable` (as in Rainmeter, a press that runs a `LeftMouseDownAction` doesn't drag)
     - [x] X11
@@ -91,7 +92,7 @@ The goal is for Snowmeter to work on all three.
   - `KeepOnScreen`, `SnapEdges` (10 px, other skins then screen edges)
     - [ ] X11 🟡 applied when the skin stops moving, so it jumps into place; Ctrl/Shift can't turn snapping off
     - [x] Wayland (layer-shell): during the drag; Ctrl/Shift turns snapping off
-    - [ ] GNOME ❌ we don't know where the window is
+    - [ ] GNOME: through XWayland, as X11 (untested)
 
 ## Manage window
 A normal GTK4 window (with a title bar) for running Snowmeter without the terminal, like Rainmeter's Manage dialog.

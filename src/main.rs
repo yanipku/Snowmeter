@@ -26,7 +26,9 @@ use gtk4::{glib, Application};
 use std::{
     cell::Cell,
     env,
+    os::unix::process::CommandExt,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 const USAGE: &str = "Usage: snowmeter [options] <skin> [<skin> ...]
@@ -66,6 +68,35 @@ fn print_skins(root: &Path, source: &str) {
     }
     for s in skins {
         println!("  {}", s);
+    }
+}
+
+// Backend order: Wayland with layer-shell, else X11 through XWayland (where x11pos.rs can
+// place windows and keep them above/below), else plain Wayland windows. GTK can't switch
+// backend once started, so for X11 the program restarts itself with GDK_BACKEND=x11.
+// GDK_BACKEND set by the user always wins (and also stops the restart from looping).
+fn fall_back_to_xwayland() {
+    if env::var_os("GDK_BACKEND").is_some() || env::var_os("DISPLAY").is_none() {
+        return;
+    }
+    let Some(display) = gtk4::gdk::Display::default() else { return };
+    // is_supported() prints a CRITICAL warning when asked on X11, so don't ask there
+    if display.is::<gdk4_x11::X11Display>() || gtk4_layer_shell::is_supported() {
+        return;
+    }
+    let exe = env::current_exe().unwrap_or_else(|e| fail(&format!("Can't find Snowmeter itself: {e}")));
+    // exec() only returns if starting the new copy failed
+    let err = Command::new(exe).args(env::args_os().skip(1)).env("GDK_BACKEND", "x11").exec();
+    eprintln!("Can't restart with X11 ({err}); skins will be plain Wayland windows");
+}
+
+// For the startup message
+fn backend_name() -> &'static str {
+    match gtk4::gdk::Display::default() {
+        Some(d) if d.is::<gdk4_x11::X11Display>() => "X11",
+        Some(_) if gtk4_layer_shell::is_supported() => "Wayland (layer-shell)",
+        Some(_) => "Wayland (plain windows)",
+        None => "none",
     }
 }
 
@@ -130,6 +161,8 @@ fn main() -> glib::ExitCode {
 
     // Start GTK now, so loading the skins can read the monitors (#SCREENAREAWIDTH# and others)
     gtk4::init().unwrap_or_else(|e| fail(&format!("Can't start GTK: {e}")));
+    fall_back_to_xwayland();
+    println!("Backend: {}", backend_name());
     // A skin with an error is reported and skipped, as Rainmeter does; the others still run
     let mut skins = Vec::new();
     for (name, file) in files {

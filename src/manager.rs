@@ -82,10 +82,14 @@ impl Manager {
         }
         let window = SkinWindow::open(&self.app, skin, position, &settings, Rc::downgrade(self));
         // The new window opens before the old one closes, so GTK never sees zero windows
-        let old = self.skins.borrow_mut().insert(key, window);
+        let old = self.skins.borrow_mut().insert(key, window.clone());
         if let Some(old) = old {
             old.close();
         }
+        //OnRefreshAction also runs on first load, once the skin is in the list (so bangs
+        // naming its own config find it) and any old skin of its config is gone
+        let action = window.skin.borrow().on_refresh.clone();
+        window.run_skin_action(action, &window.in_refresh_action);
     }
 
     // The running skin of a config
@@ -217,6 +221,10 @@ struct SkinWindow {
     // Set when the last left press ran a LeftMouseDownAction: as in Rainmeter, that press
     // doesn't start a drag
     press_ran_action: Cell<bool>,
+    // Set while OnUpdateAction / OnRefreshAction runs, so one that !Update / !Refresh
+    // doesn't start itself again forever
+    in_update_action: Cell<bool>,
+    in_refresh_action: Cell<bool>,
     // The short wait after a move before saving the position (see position_changed)
     save_timer: RefCell<Option<glib::SourceId>>,
     // The position last saved or loaded, so a resize alone doesn't write the file
@@ -272,6 +280,8 @@ impl SkinWindow {
                 click_through: Cell::new(settings.click_through),
                 z: Cell::new(settings.z),
                 press_ran_action: Cell::new(false),
+                in_update_action: Cell::new(false),
+                in_refresh_action: Cell::new(false),
                 save_timer: RefCell::new(None),
                 saved_position: Cell::new(Some(position)),
             }
@@ -556,6 +566,10 @@ impl SkinWindow {
 
     // Stops the timers and closes the window
     fn close(&self) {
+        // OnCloseAction, while the skin is still whole (Rainmeter runs it before tearing
+        // the skin down). A config bang in it waits for GTK, so it can't close us twice
+        let action = self.skin.borrow().on_close.clone();
+        self.run_skin_action(action, &Cell::new(false));
         self.flush_position();
         if let Some(timer) = self.timer.borrow_mut().take() {
             timer.remove();
@@ -603,6 +617,9 @@ impl SkinWindow {
             self.area.set_content_height(h);
         }
         self.area.queue_draw();
+        // OnUpdateAction run last, after the redraw, as in Rainmeter
+        let action = self.skin.borrow().on_update.clone();
+        self.run_skin_action(action, &self.in_update_action);
     }
 
     // !Refresh: reads the skin file again and puts the new skin in place of the old one.
@@ -628,6 +645,9 @@ impl SkinWindow {
         self.area.set_content_height(h);
         self.area.queue_draw();
         self.start_timer();
+        // OnRefreshAction: the skin is loaded again and its timer runs
+        let action = self.skin.borrow().on_refresh.clone();
+        self.run_skin_action(action, &self.in_refresh_action);
     }
 
     // Runs the action of the first of `events` that anything at (x, y) has an action for
@@ -643,11 +663,18 @@ impl SkinWindow {
             println!("{event:?} at ({x:.0}, {y:.0}): {text}");
             text
         }; // `s` is dropped here: the skin is no longer borrowed
+        self.run_action(&text);
+    }
+
+    /*Runs an action: its bangs one after another, then any !Refresh, then (once GTK is free)
+    the congif bangs, as Rainmeter does. Used by mouse actions and the [Rainmeter]
+    actions (OnUpdateAction and others).*/
+    fn run_action(&self, text: &str) {
         let (Some(me), Some(manager)) = (self.me.upgrade(), self.manager.upgrade()) else { return };
         // Like Rainmeter, refreshes wait until the rest of the action has run
         let mut to_refresh: Vec<Rc<SkinWindow>> = Vec::new();
         let mut config_bangs: Vec<ConfigBang> = Vec::new();
-        for command in action::split_bangs(&text) {
+        for command in action::split_bangs(text) {
             let targets = match action::target(command) {
                 Target::This => vec![me.clone()],
                 Target::All => manager.all(),
@@ -683,6 +710,24 @@ impl SkinWindow {
                 }
             });
         }
+    }
+
+    //Runs OnUpdateAction or OnRefreshAction, if the skin has it. 'busy' is that action's
+    //guard flag: while it's set, the action is already running and isn't started again.
+    fn run_skin_action(&self, action: Option<String>, busy: &Cell<bool>) {
+        let Some(raw) = action else { return };
+        if busy.get() {
+            return;
+        }
+        //[#Var], [&Measure] and [$Skin...] are filled in now as for mouse action
+        let info = self.info();
+        let text = {
+            let s = self.skin.borrow();
+            crate::dollarvar::with_skin(info, || s.expand_action("Rainmeter", &raw))
+        };
+        busy.set(true);
+        self.run_action(&text);
+        busy.set(false);
     }
 
     // Runs one bang on this skin. Redraw and Update are done here; Refresh and the

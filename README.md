@@ -16,7 +16,7 @@ The full checklist, compared with Rainmeter for Windows, is in [ROADMAP.md](ROAD
 - Compatibility with each kind of desktop (the desktop-dependent items in the roadmap):
   - X11: 4 / 7 ≈ **57%**
   - Wayland with layer-shell (KDE, sway, Hyprland, labwc, …): 6 / 7 ≈ **86%**
-  - GNOME (Wayland): 0 / 7 = **0%**
+  - GNOME (Wayland): 0 / 7 = **0%** (runs through XWayland, untested)
 
 ## What works
 

@@ -20,6 +20,10 @@ pub struct Skin {
     pub height: i32,
     pub dynamic_window: bool, // DynamicWindowSize=1
     pub mouse: MouseActions,  // mouse actions of [Rainmeter], for clicks no meter takes
+    // OnRefreshAction, OnUpdateAction and OnCloseAction of [Rainmeter] (none = not set)
+    pub on_refresh: Option<String>,
+    pub on_update: Option<String>,
+    pub on_close: Option<String>,
     pub vars: HashMap<String, String>, // the variable table, kept so !SetVariable can change it
     pub file: PathBuf,         // the skin's .ini, the skins folder and the settings folder:
     pub skins_root: PathBuf,   // what load() needs to read the skin again for !Refresh
@@ -313,6 +317,18 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         .map(|s| MouseActions::read(s, &section_vars(&vars, &s.name)))
         .unwrap_or_default();
 
+    //The [Rainmeter] action. Like the mouse action, #Var# is filled in now and
+    //[#Var] when they run; an empty one counts as not set.
+    let rm_vars = section_vars(&vars, "Rainmeter");
+    let action = |key: &str| {
+        rm.and_then(|s| s.options.get(key))
+            .map(|v| ini::resolve(v, &rm_vars))
+            .filter(|a| !a.trim().is_empty())
+    };
+    let on_refresh = action("onrefreshaction");
+    let on_update = action("onupdateaction");
+    let on_close = action("oncloseaction");
+
     let (width, height) = window_size(&meters, &measures);
     Ok(Skin {
         measures,
@@ -323,6 +339,9 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         height,
         dynamic_window,
         mouse,
+        on_refresh,
+        on_update,
+        on_close,
         vars,
         file: skin_file.to_path_buf(),
         skins_root: skins_root.to_path_buf(),
