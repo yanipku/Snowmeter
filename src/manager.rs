@@ -404,6 +404,17 @@ impl SkinWindow {
             clear(&surface);
             surface.connect_layout(move |s, _, _| clear(s));
         });
+        /*OnFocusAction / OnUnfocusAction: GTK flips the window's "is-active" property
+          when it gain or loses keyboard focus */
+        let focus_me = Rc::downgrade(&sw);
+        window.connect_is_active_notify(move |w| {
+            let Some(sw) = focus_me.upgrade() else { return };
+            let action = {
+                let skin = sw.skin.borrow();
+                if w.is_active() { skin.on_focus.clone() } else { skin.on_unfocus.clone() }
+            };
+            sw.run_skin_action(action, &Cell::new(false));
+        });
         window.present();
         sw
     }
@@ -606,7 +617,7 @@ impl SkinWindow {
             meter::update_all(&mut s.meters, &s.measures, &values);
             // DynamicWindowSize=1: the window follows the meters
             if s.dynamic_window {
-                Some(skin::window_size(&s.meters, &s.measures))
+                Some(skin::window_size(&s.meters, &s.measures, s.fixed_size))
             } else {
                 None
             }
@@ -704,10 +715,14 @@ impl SkinWindow {
         // may close its own window. They run in the order the action gave them.
         if !config_bangs.is_empty() {
             let this = self.skin.borrow().config.clone();
+            // Keep the program alive until the bang have run: closiong the last windows
+            // would otherwise make GTK quit before a new skin can open
+            let hold = manager.app.hold();
             glib::idle_add_local_once(move || {
                 for bang in config_bangs {
                     manager.run_config_bang(bang, &this);
                 }
+                drop(hold);
             });
         }
     }

@@ -19,11 +19,14 @@ pub struct Skin {
     pub width: i32,
     pub height: i32,
     pub dynamic_window: bool, // DynamicWindowSize=1
+    pub fixed_size: (i32, i32), // SkinWidth/SkinHeight (0 = follow the meter)
     pub mouse: MouseActions,  // mouse actions of [Rainmeter], for clicks no meter takes
     // OnRefreshAction, OnUpdateAction and OnCloseAction of [Rainmeter] (none = not set)
     pub on_refresh: Option<String>,
     pub on_update: Option<String>,
     pub on_close: Option<String>,
+    pub on_focus: Option<String>,
+    pub on_unfocus: Option<String>,
     pub vars: HashMap<String, String>, // the variable table, kept so !SetVariable can change it
     pub file: PathBuf,         // the skin's .ini, the skins folder and the settings folder:
     pub skins_root: PathBuf,   // what load() needs to read the skin again for !Refresh
@@ -70,16 +73,23 @@ impl Skin {
     }
 }
 
-// Window size = bounding box of all meters plus a small margin
-pub fn window_size(meters: &[Meter], measures: &[Box<dyn Measure>]) -> (i32, i32) {
+/* Window size = bounding box of all meters plus a small margin. A side of
+   'fixed' (SkinWidth/SkinHeight) above 0 replace that side , as in Rainmeter. */
+pub fn window_size(meters: &[Meter], measures: &[Box<dyn Measure>], fixed: (i32, i32)) -> (i32, i32) {
     let (mut right, mut bottom) = (0.0_f64, 0.0_f64);
     for m in meters {
         let (r, b) = m.bounds(measures);
         right = right.max(r);
         bottom = bottom.max(b);
     }
-    let side = |v: f64| (v + 10.0).ceil().clamp(50.0, MAX_WINDOW_SIDE) as i32;
-    (side(right), side(bottom))
+    let side = |v: f64, fixed: i32| {
+        if fixed > 0 {
+            fixed.min(MAX_WINDOW_SIDE as i32)
+        } else {
+            (v + 10.0).ceil().clamp(50.0, MAX_WINDOW_SIDE) as i32
+        }
+    };
+    (side(right, fixed.0), side(bottom, fixed.1))
 }
 
 // The variables as one section sees them: everything, plus #CURRENTSECTION#
@@ -308,6 +318,13 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         .and_then(|v| formula::parse_number(&v).ok())
         .unwrap_or(0.0)
         != 0.0;
+    // SkinWidth / SkinHeight: whole numbers, formulas allowed; 0 or less = not set
+    let int = |key: &str| {
+        get(key)
+        .and_then(|v| formula::parse_number(&v).ok())
+        .map_or(0, |n| n as i32)
+    };
+    let fixed_size = (int("skinwidth"), int("skinheight"));
     let background = if get("backgroundmode").as_deref() == Some("2") {
         get("solidcolor").and_then(|v| meter::parse_color(&v))
     } else {
@@ -328,8 +345,10 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
     let on_refresh = action("onrefreshaction");
     let on_update = action("onupdateaction");
     let on_close = action("oncloseaction");
+    let on_focus = action("onfocusaction");
+    let on_unfocus = action("onunfocusaction");
 
-    let (width, height) = window_size(&meters, &measures);
+    let (width, height) = window_size(&meters, &measures, fixed_size);
     Ok(Skin {
         measures,
         meters,
@@ -338,10 +357,13 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         width,
         height,
         dynamic_window,
+        fixed_size,
         mouse,
         on_refresh,
         on_update,
         on_close,
+        on_focus,
+        on_unfocus,
         vars,
         file: skin_file.to_path_buf(),
         skins_root: skins_root.to_path_buf(),
