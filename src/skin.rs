@@ -1,6 +1,6 @@
 use crate::ini;
 use crate::measure::{number_option, Measure, Ranged, Switch};
-use crate::meter::{self, Color, Layout, Meter};
+use crate::meter::{self, Layout, Meter};
 use crate::mouse::{MouseActions, MouseEvent};
 use crate::{calc, clock, cpu, fonts, formula, memory};
 use std::{
@@ -15,11 +15,12 @@ pub struct Skin {
     pub measures: Vec<Box<dyn Measure>>,
     pub meters: Vec<Meter>,
     pub update_ms: u64,
-    pub background: Option<Color>,
+    pub background: Option<meter::Fill>, // BackgroundMode=2: SolidColor, SolidColor2, GradientAngle
     pub width: i32,
     pub height: i32,
     pub dynamic_window: bool, // DynamicWindowSize=1
     pub fixed_size: (i32, i32), // SkinWidth/SkinHeight (0 = follow the meter)
+    pub drag_margins: [i32; 4], // DragMargins=Left,Top,Right,Bottom (all 0 = drag anywhere)
     pub mouse: MouseActions,  // mouse actions of [Rainmeter], for clicks no meter takes
     // OnRefreshAction, OnUpdateAction and OnCloseAction of [Rainmeter] (none = not set)
     pub on_refresh: Option<String>,
@@ -71,6 +72,18 @@ impl Skin {
         let m = self.measures.iter_mut().find(|m| m.name().eq_ignore_ascii_case(name))?;
         m.switch_mut()
     }
+}
+
+/* Whether a press at (x, y) may drag the skin, as in Skin.cpp OnNcHitTest:
+   a negative left/top count from the far edge, and so does a right/bottom
+   bigger than the skin. */
+pub fn in_drag_area(margins: [i32; 4], (w,h): (i32, i32), x: f64, y:f64) -> bool {
+    let [left, top, right, bottom] = margins;
+    let x1 = if left < 0 { left + w } else { left };
+    let x2 = if w - right > w { w - right - w } else { w - right };
+    let y1 = if top < 0 { top + h } else { top };
+    let y2 = if h - bottom > h { h - bottom - h } else { h - bottom };
+    x >= x1 as f64 && x < x2 as f64 && y >= y1 as f64 && y < y2 as f64
 }
 
 /* Window size = bounding box of all meters plus a small margin. A side of
@@ -308,7 +321,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         }
     }
 
-    // [Rainmeter] section: Update, DynamicWindowSize, BackgroundMode=2 + SolidColor
+    // [Rainmeter] section: Update, DynamicWindowSize, BackgroundMode=2 + SolidColor/SolidColor2/GradientAngle
     let get = |key: &str| {
         rm.and_then(|s| s.options.get(key))
             .map(|v| ini::resolve(v, &vars))
@@ -325,8 +338,23 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         .map_or(0, |n| n as i32)
     };
     let fixed_size = (int("skinwidth"), int("skinheight"));
+    // DragMargins=Left,Top,Right,Bottom: whole numbers, formulas allowed; missing = 0
+    let mut drag_margins = [0; 4];
+    if let Some(v) = get("dragmargins") {
+        for (slot, part) in drag_margins.iter_mut().zip(v.split(',')) {
+            *slot = formula::parse_number(part.trim()).map_or(0, |n| n as i32);
+        }
+    }
     let background = if get("backgroundmode").as_deref() == Some("2") {
-        get("solidcolor").and_then(|v| meter::parse_color(&v))
+        get("solidcolor").and_then(|v| meter::parse_color(&v)).map(|color| {
+            // SolidColor2 defaults to SolidColor (a plain fill), GradientAngle to 0
+            let color2 = get("solidcolor2").and_then(|v| meter::parse_color(&v)).unwrap_or(color);
+            let angle = get("gradientangle")
+                .and_then(|v| formula::parse_number(&v).ok())
+                .filter(|a| a.is_finite())
+                .unwrap_or(0.0);
+            meter::Fill { color, color2, angle }
+        })
     } else {
         None
     };
@@ -358,6 +386,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         height,
         dynamic_window,
         fixed_size,
+        drag_margins,
         mouse,
         on_refresh,
         on_update,
@@ -392,6 +421,16 @@ mod tests {
 
     fn no_vars() -> HashMap<String, String> {
         HashMap::new()
+    }
+
+    #[test]
+    fn drag_margins_area() {
+        let size = (100, 50);
+        assert!(in_drag_area([0, 0, 0, 0], size, 99.0, 49.0)); //default: everywhere
+        assert!(!in_drag_area([0, 0, 0, 30], size, 10.0, 25.0)); // bottom 30 px blocked
+        assert!(in_drag_area([0, 0, 0, 30], size, 10.0, 19.0));
+        assert!(!in_drag_area([-20, 0, 0, 0], size, 70.0, 10.0)); // only the last 20 px
+        assert!(in_drag_area([-20, 0, 0, 0], size, 85.0, 10.0,));
     }
 
     // The example from Rainmeter's own MeterStyle page

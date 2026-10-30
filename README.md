@@ -11,7 +11,7 @@ Early development: skins are started from the terminal.
 The full checklist, compared with Rainmeter for Windows, is in [ROADMAP.md](ROADMAP.md).
 
 - Overall estimate: **10–15%**
-- Roadmap checklist: 60 / 154 ≈ **39%**
+- Roadmap checklist: 62 / 154 ≈ **40%**
 
 - Compatibility with each kind of desktop (the desktop-dependent items in the roadmap):
   - X11: 4 / 7 ≈ **57%**

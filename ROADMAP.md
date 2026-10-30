@@ -14,7 +14,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 ## Progress compared with Rainmeter for Windows
 
 - Overall estimate: **10–15%**
-- Roadmap checklist: 60 / 154 ≈ **39%**
+- Roadmap checklist: 62 / 154 ≈ **40%**
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
   - X11: 4 / 7 ≈ **57%**
@@ -24,7 +24,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 ## Next up
 1. [ ] Remember each skin's position and settings (our own Rainmeter.ini; Wayland limits window placement)
 2. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
-3. [ ] The rest of the `[Rainmeter]` section: `Background` image with `BackgroundMode` 0/1/3/4 and `BackgroundMargins`, `SolidColor2`/`GradientAngle`, `BevelType`, `DragMargins`, `DefaultUpdateDivider`, `ContextTitle`/`ContextAction`, `Group`, `AccurateText`, `Blur`/`BlurRegion` (see "[Rainmeter] section" below)
+3. [ ] The rest of the `[Rainmeter]` section: `Background` image with `BackgroundMode` 0/1/3/4 and `BackgroundMargins`, `BevelType`, `DefaultUpdateDivider`, `ContextTitle`/`ContextAction`, `Group`, `AccurateText`, `Blur`/`BlurRegion` (see "[Rainmeter] section" below)
 4. [ ] The rest of "Interaction": `MouseOverAction`/`MouseLeaveAction`, scroll actions, tooltips, the other bangs (`!WriteKeyValue`, the meter-group bangs, `!SetOptionGroup`, `!UpdateMeter`/`!UpdateMeasure`, `!CommandMeasure`), `IfCondition`, `IfAbove`/`IfBelow`/`IfEqual`, `IfMatch`, `OnChangeAction` (see "Interaction" below)
 5. [ ] The rest of the general measure options: `InvertMeasure`, `UpdateDivider`, `Substitute`/`RegExpSubstitute`, `AverageSize`, `Group` (see "General measure options" below)
 6. [ ] The rest of the general meter options: `SolidColor2`/`GradientAngle`, `BevelType`/`BevelColor`/`BevelColor2`, `AntiAlias`, `TransformationMatrix`, `UpdateDivider`, `Group`, `Container` (see "General meter options" below)
@@ -108,11 +108,11 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] `Update`
 - [x] `DynamicWindowSize`
 - [x] `BackgroundMode=2` + `SolidColor`
-- [ ] `SolidColor2` / `GradientAngle` (gradient background)
+- [x] `SolidColor2` / `GradientAngle` (gradient background, same edge points as Rainmeter)
 - [ ] `Background` image, `BackgroundMode` 0/1/3/4, `BackgroundMargins`
 - [ ] `BevelType`
 - [x] `SkinWidth` / `SkinHeight`
-- [ ] `DragMargins`
+- [x] `DragMargins` (negative left/top count from the far edge, as in Rainmeter)
 - [ ] `DefaultUpdateDivider`
 - [x] `OnRefreshAction`, `OnCloseAction`, `OnUpdateAction`, `OnFocusAction`/`OnUnfocusAction`
 - [ ] Ctrl+C / SIGTERM runs `OnCloseAction` (signal handling)

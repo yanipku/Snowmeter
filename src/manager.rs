@@ -255,12 +255,11 @@ impl SkinWindow {
 
         let sw = Rc::new_cyclic(|me: &Weak<SkinWindow>| {
             let draw_me = me.clone();
-            area.set_draw_func(move |_, cr, _w, _h| {
+            area.set_draw_func(move |_, cr, w, h| {
                 let Some(sw) = draw_me.upgrade() else { return };
                 let s = sw.skin.borrow();
                 if let Some(bg) = &s.background {
-                    meter::set_color(cr, bg);
-                    let _ = cr.paint();
+                    bg.paint(cr, 0.0, 0.0, w as f64, h as f64);
                 }
                 for m in &s.meters {
                     m.draw(cr, &s.measures);
@@ -315,6 +314,15 @@ impl SkinWindow {
         drag.connect_drag_update(move |gesture, dx, dy| {
             let (Some(window), Some(sw)) = (weak_window.upgrade(), drag_me.upgrade()) else { return };
             if !sw.draggable.get() || sw.press_ran_action.get() {
+                return;
+            }
+            // DragMargins: a press outside the drag area never drags (clicks still work)
+            let Some((px, py)) = gesture.start_point() else { return };
+            let inside = {
+                let s = sw.skin.borrow();
+                crate::skin::in_drag_area(s.drag_margins, (s.width, s.height), px, py)
+            };
+            if !inside{
                 return;
             }
             // A few pixels of wobble is still a click, not a drag

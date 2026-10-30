@@ -11,7 +11,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct Color {
     pub r: f64,
     pub g: f64,
@@ -69,6 +69,53 @@ pub fn parse_color(s: &str) -> Option<Color> {
 
 pub fn set_color(cr: &cairo::Context, c: &Color) {
     cr.set_source_rgba(c.r, c.g, c.b, c.a);
+}
+
+// A background that may be a gradient: SolidColor, SolidColor2 and GradientAngle
+#[derive(Clone, Copy)]
+pub struct Fill {
+    pub color: Color,
+    pub color2: Color, // =color when SolidColor2 isn't set
+    pub angle: f64, // GradientAngle, in degrees
+}
+
+impl Fill {
+    //Paints the rectangle as Rainmeter's Canvas::FillGradientRectangle does
+    pub fn paint(&self, cr: &cairo::Context, x: f64, y: f64, w: f64, h: f64) {
+        let (c1, c2) = (self.color, self.color2);
+        if c1.a == 0.0 && c2.a == 0.0 {
+            return;
+        }
+        cr.rectangle(x, y, w, h);
+        if c1 == c2 {
+            set_color(cr, &c1);
+        } else {
+            let (sx, sy) = edge_point(self.angle + 180.0, w, h);
+            let (ex, ey) = edge_point(self.angle, w, h);
+            let g = cairo::LinearGradient::new(x + sx, y +sy, x + ex, y + ey);
+            g.add_color_stop_rgba(0.0, c1.r, c1.g, c1.b, c1.a);
+            g.add_color_stop_rgba(1.0, c2.r, c2.g, c2.b, c2.a);
+            let _ = cr.set_source(&g);
+        }
+        let _ = cr.fill();
+    }
+}
+
+/* where the gradient axis at 'angle' degrees meets the angle of a w x h box,
+   counted from its top-left corner (Rainmeter's Gfx::Util::FindEdgePoint) */
+fn edge_point(angle: f64, w: f64, h: f64) -> (f64, f64) {
+    use std::f64::consts::PI;
+    let base = angle.rem_euclid(360.0);
+    let rad = base.to_radians();
+    let axis = match (base / 90.0) as i32 % 4 {
+        0 => rad,
+        1 => PI - rad,
+        2 => rad - PI,
+        _ => 2.0 * PI - rad,
+    };
+    let half = w.hypot(h) / 2.0;
+    let cos_axis = (axis - h.atan2(w)).abs().cos();
+    (w / 2.0 + half * cos_axis * rad.cos(), h / 2.0 + half * cos_axis * rad.sin())
 }
 
 // Reads an option from a section and resolves #Variables# in it
@@ -1412,5 +1459,14 @@ mod tests {
         assert_eq!((r.w, r.h), (110.0, 20.0)); // what [A:W] and [A:H] see
         assert_eq!(a.bounds(&measures), (120.0, 40.0)); // for the window size
         assert_eq!(b.y, 40.0); // Y=0R starts below A's padding: 20 + 20
+    }
+
+    #[test]
+    fn gradient_edge_points() {
+        let near = |(x, y): (f64, f64), (ex, ey): (f64, f64)| (x -ex).abs() < 1e-9 && (y - ey).abs() <1e-9;
+        assert!(near(edge_point(0.0, 100.0, 50.0), (100.0, 25.0))); // right edge
+        assert!(near(edge_point(180.0, 100.0, 50.0), (0.0, 25.0))); // left edge
+        assert!(near(edge_point(90.0, 100.0, 50.0), (50.0, 50.0))); // bottom
+        assert!(near(edge_point(-90.0, 100.0, 50.0), (50.0, 0.0))); // top
     }
 }
