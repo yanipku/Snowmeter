@@ -505,6 +505,7 @@ enum Kind {
         h: f64,
         color: Color,
         vertical: bool,
+        flip: bool, // Flip=1: grow from the top(vertical) or from the right (horizontal)
     },
     Image {
         pixbuf: Option<Pixbuf>, // None if the file couldn't be loaded
@@ -542,7 +543,7 @@ pub struct Meter {
     y_pos: Pos,
     x: f64, // where the meter really is (worked out by Layout)
     y: f64,
-    solid: Option<Color>,            // SolidColor: background of the whole meter, padding included
+    solid: Option<Fill>,            // SolidColor/SolidColor2/GradientAngle: background of the whole meter, padding included
     padding: Padding,
     hidden: bool,                    // Hidden=1
     measure_idx: Vec<Option<usize>>, // MeasureName, MeasureName2, ... -> index into the measure list
@@ -607,7 +608,18 @@ impl Meter {
 
         let x_pos = pos_opt(section, "x", vars);
         let y_pos = pos_opt(section, "y", vars);
-        let solid = color_opt(section, "solidcolor", vars);
+        /* As Meter.cpp: SolidColor default to transparent, SolidColor2 to SolidColor, GradientAngle to 0.
+           None when neither color is set, so plain meter skin the background entirely */
+        let color = color_opt(section, "solidcolor", vars);
+        let color2 = color_opt(section, "solidcolor2", vars);
+        let solid = if color.is_some() || color2.is_some() {
+            let color = color.unwrap_or(Color { r: 0.0, g: 0.0, b: 0.0, a: 0.0});
+            let color2 = color2.unwrap_or(color);
+            let angle = num_opt(section, "gradientangle", vars).unwrap_or(0.0);
+            Some(Fill { color, color2, angle})
+        } else {
+            None
+        };
         let padding = match opt(section, "padding", vars) {
             None => Padding::default(),
             Some(text) => parse_padding(&text).unwrap_or_else(|e| {
@@ -667,6 +679,7 @@ impl Meter {
                 vertical: !opt(section, "barorientation", vars)
                     .map(|v| v.eq_ignore_ascii_case("horizontal"))
                     .unwrap_or(false),
+                flip:num(section, "flip", vars, 0.0) != 0.0,
             },
             "image" => {
                 let name = opt(section, "imagename", vars).unwrap_or_default();
@@ -957,9 +970,7 @@ impl Meter {
         let (ow, oh) = self.padded((cw, ch));
         let (bx, by) = self.origin(ow, oh);
         if let Some(bg) = &self.solid {
-            set_color(cr, bg);
-            cr.rectangle(bx, by, ow, oh);
-            let _ = cr.fill();
+            bg.paint(cr, bx, by, ow, oh);
         }
         let (cx, cy) = (bx + self.padding.left, by + self.padding.top);
 
@@ -979,7 +990,7 @@ impl Meter {
                 cr.move_to(tx, ty + ascent);
                 let _ = cr.show_text(&text);
             }
-            Kind::Bar { w, h, color, vertical } => {
+            Kind::Bar { w, h, color, vertical, flip } => {
                 let fraction = match self.measure_idx.first() {
                     Some(Some(i)) => measures[*i].percent(),
                     _ => 0.0,
@@ -987,9 +998,12 @@ impl Meter {
                 set_color(cr, color);
                 if *vertical {
                     let filled = *h * fraction;
-                    cr.rectangle(cx, cy + *h - filled, *w, filled);
+                    let top = if *flip { cy } else { cy + *h - filled };
+                    cr.rectangle(cx, top, *w, filled);
                 } else {
-                    cr.rectangle(cx, cy, *w * fraction, *h);
+                    let filled = *w * fraction;
+                    let left = if *flip {cx + *w - filled } else { cx };
+                    cr.rectangle(left, cy, filled, *h);
                 }
                 let _ = cr.fill();
             }
@@ -1188,7 +1202,7 @@ mod tests {
             padding: Padding::default(),
             hidden: false,
             measure_idx: Vec::new(),
-            kind: Kind::Bar { w, h, color: WHITE, vertical: false },
+            kind: Kind::Bar { w, h, color: WHITE, vertical: false, flip: false },
             source: None,
             dynamic: false,
             reread_once: false,

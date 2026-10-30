@@ -10,8 +10,9 @@ Written in Rust (edition 2024), with GTK4 and Cairo for the window and drawing.
 Early development: skins are started from the terminal.
 The full checklist, compared with Rainmeter for Windows, is in [ROADMAP.md](ROADMAP.md).
 
-- Overall estimate: **10–15%**
-- Roadmap checklist: 62 / 154 ≈ **40%**
+- Overall estimate: **15–20%**
+- Main app only (without the plugins that come with Rainmeter): **20–25%**
+- Roadmap checklist: 64 / 155 ≈ **41%**
 
 - Compatibility with each kind of desktop (the desktop-dependent items in the roadmap):
   - X11: 4 / 7 ≈ **57%**

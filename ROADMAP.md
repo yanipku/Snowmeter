@@ -13,8 +13,9 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 ## Progress compared with Rainmeter for Windows
 
-- Overall estimate: **10–15%**
-- Roadmap checklist: 62 / 154 ≈ **40%**
+- Overall estimate: **15–20%**
+- Main app only (without the plugins that come with Rainmeter): **20–25%**
+- Roadmap checklist: 64 / 155 ≈ **41%**
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
   - X11: 4 / 7 ≈ **57%**
@@ -27,7 +28,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 3. [ ] The rest of the `[Rainmeter]` section: `Background` image with `BackgroundMode` 0/1/3/4 and `BackgroundMargins`, `BevelType`, `DefaultUpdateDivider`, `ContextTitle`/`ContextAction`, `Group`, `AccurateText`, `Blur`/`BlurRegion` (see "[Rainmeter] section" below)
 4. [ ] The rest of "Interaction": `MouseOverAction`/`MouseLeaveAction`, scroll actions, tooltips, the other bangs (`!WriteKeyValue`, the meter-group bangs, `!SetOptionGroup`, `!UpdateMeter`/`!UpdateMeasure`, `!CommandMeasure`), `IfCondition`, `IfAbove`/`IfBelow`/`IfEqual`, `IfMatch`, `OnChangeAction` (see "Interaction" below)
 5. [ ] The rest of the general measure options: `InvertMeasure`, `UpdateDivider`, `Substitute`/`RegExpSubstitute`, `AverageSize`, `Group` (see "General measure options" below)
-6. [ ] The rest of the general meter options: `SolidColor2`/`GradientAngle`, `BevelType`/`BevelColor`/`BevelColor2`, `AntiAlias`, `TransformationMatrix`, `UpdateDivider`, `Group`, `Container` (see "General meter options" below)
+6. [ ] The rest of the general meter options: `BevelType`/`BevelColor`/`BevelColor2`, `AntiAlias`, `TransformationMatrix`, `UpdateDivider`, `Group`, `Container` (see "General meter options" below)
 7. [ ] Right-click menu (with `ContextTitle`/`ContextAction`, and `!SetOption Rainmeter Context…`)
 8. [ ] Running programs from actions (safely: launched directly, never through a shell)
 9. [ ] The missing measures, and the missing options of the measures we have (see "Measures" below)
@@ -147,6 +148,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
 - [ ] `IfMatch` actions
 - [ ] `OnChangeAction`
+- [ ] `OnUpdateAction` on meters and measures (every section reads it, Section.cpp)
 
 ## General measure options
 - [x] `MinValue` / `MaxValue`
@@ -183,7 +185,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] `SolidColor`
 - [x] `Hidden`
 - [x] `MeasureName`, `MeasureName2`, …
-- [ ] `SolidColor2` / `GradientAngle`
+- [x] `SolidColor2` / `GradientAngle` (gradient meter background, same as the skin background)
 - [ ] `BevelType` / `BevelColor` / `BevelColor2`
 - [ ] `AntiAlias`
 - [ ] `TransformationMatrix`
@@ -209,7 +211,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 
 ## Bar meter
 - [x] `BarColor`, `BarOrientation`
-- [ ] `Flip`
+- [x] `Flip`
 - [ ] `BarImage`
 - [ ] `BarBorder`
 

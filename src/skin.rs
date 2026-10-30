@@ -346,15 +346,15 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         }
     }
     let background = if get("backgroundmode").as_deref() == Some("2") {
-        get("solidcolor").and_then(|v| meter::parse_color(&v)).map(|color| {
-            // SolidColor2 defaults to SolidColor (a plain fill), GradientAngle to 0
-            let color2 = get("solidcolor2").and_then(|v| meter::parse_color(&v)).unwrap_or(color);
-            let angle = get("gradientangle")
-                .and_then(|v| formula::parse_number(&v).ok())
-                .filter(|a| a.is_finite())
-                .unwrap_or(0.0);
-            meter::Fill { color, color2, angle }
-        })
+        // SolidColor default to gray (as in skin.cpp), SolideColor2 to SolidColor, GradientAngle to 0
+        let gray = meter::Color { r: 128.0 / 255.0, g: 128.0 / 255.0, b: 128.0 / 255.0, a: 1.0 };
+        let color = get("solidcolor").and_then(|v| meter::parse_color(&v)).unwrap_or(gray);
+        let color2 = get("solodcolor2").and_then(|v| meter::parse_color(&v)).unwrap_or(color);
+        let angle = get("gradientangle")
+            .and_then(|v| formula::parse_number(&v).ok())
+            .filter(|a| a.is_finite())
+            .unwrap_or(0.0);
+        Some(meter::Fill { color, color2, angle})
     } else {
         None
     };
