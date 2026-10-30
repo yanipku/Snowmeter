@@ -104,25 +104,39 @@ pub trait Measure {
 // the measure read them again at the next update.
 pub struct Switch {
     inner: Box<dyn Measure>,
-    disabled: bool, // change them with set_disabled / set_paused, which keep the options in step
+    disabled: bool,                 // change them with set_disabled / set_paused, which keep the options in step
     paused: bool,
-    zeroed: bool, // set when a disabled update made the value 0; cleared by a real update
-    source: Option<Section>,      // the options as written (None only in tests)
-    vars: HashMap<String, String>, // this measure's copy of the variables
-    reread_once: bool,            // read the options again at the next update
+    zeroed: bool,                   // set when a disabled update made the value 0; cleared by a real update
+    source: Option<Section>,        // the options as written (None only in tests)
+    vars: HashMap<String, String>,  // this measure's copy of the variables
+    reread_once: bool,              // read the options again at the next update
+    on_update: String,              // OnUpdateAction, as written
+    ran: bool,                      // the last update reached the measure (not paused/diabled)
 }
 
 impl Switch {
     pub fn new(inner: Box<dyn Measure>, disabled: bool, paused: bool) -> Switch {
         let (source, vars) = (None, HashMap::new());
-        Switch { inner, disabled, paused, zeroed: false, source, vars, reread_once: false }
+        Switch {
+             inner, disabled, paused, zeroed: false, source, vars,
+             reread_once: false, on_update: String::new(), ran: false,
+            }
     }
 
     // The measure's section and variables, kept for rereading
     pub fn with_source(mut self, section: &Section, vars: &HashMap<String, String>) -> Switch {
         self.source = Some(section.clone());
         self.vars = vars.clone();
+        self.read_on_update();
         self
+    }
+
+    //OnUpdateAction, with #var# filled in now and [#var] left for when it runs
+    fn read_on_update(&mut self) {
+        let Some(src) = &self.source else { return };
+        self.on_update = src.options.get("onupdateaction")
+            .map(|v| ini::resolve(v, &self.vars))
+            .unwrap_or_default();
     }
 
     // !SetOption: changes one option as written, and rereads them all at the next update
@@ -183,15 +197,24 @@ impl Switch {
         let flag = |key: &str| number_option(&section, key, &self.vars).unwrap_or(0.0) != 0.0;
         (self.disabled, self.paused) = (flag("disabled"), flag("paused"));
         self.inner.reread(&section, &self.vars);
+        self.read_on_update();
     }
 
     // Whether this update should reach the measure inside
     fn runs(&mut self) -> bool {
+        self.ran = !self.paused && !self.disabled;
         if self.paused {
             return false;
         }
         self.zeroed = self.disabled;
-        !self.disabled
+        self.ran
+    }
+
+    /* OnUpdateAction, if the last update reached the measure (Rainmeter runs it only when
+       Measure::Update returns true, so not while paused or disabled). None when not set. */
+    pub fn update_action(&self) -> Option<&str> {
+        let action = self.on_update.trim();
+        (self.ran && !action.is_empty()).then_some(action)
     }
 }
 
@@ -358,10 +381,17 @@ pub fn update_all(measures: &mut [Box<dyn Measure>]) -> Values {
     let mut values = current_values(measures);
     // Then update in order: each fresh value replaces the old one for the measures after it
     for m in measures.iter_mut() {
-        m.update_with(&values);
-        values.insert(m.name().to_lowercase(), sample_of(&**m));
+        update_one(m, &mut values);
     }
     values
+}
+
+/* Updates one measure, puts its fresh value into 'value', and returns its OnUpdateAction
+   if this update should run it (copied, so the caller can let go of the skin first) */
+pub fn update_one(m: &mut Box<dyn Measure>, values: &mut Values) -> Option<String> {
+    m.update_with(values);
+    values.insert(m.name().to_lowercase(), sample_of(&**m));
+    m.switch_mut().and_then(|s| s.update_action()).map(str::to_string)
 }
 
 #[cfg(test)]

@@ -89,7 +89,7 @@ impl Manager {
         //OnRefreshAction also runs on first load, once the skin is in the list (so bangs
         // naming its own config find it) and any old skin of its config is gone
         let action = window.skin.borrow().on_refresh.clone();
-        window.run_skin_action(action, &window.in_refresh_action);
+        window.run_skin_action("Rainmeter", action, &window.in_refresh_action);
     }
 
     // The running skin of a config
@@ -261,6 +261,9 @@ impl SkinWindow {
                 if let Some(bg) = &s.background {
                     bg.paint(cr, 0.0, 0.0, w as f64, h as f64);
                 }
+                if let Some(bevel) = &s.bevel {
+                    bevel.draw(cr, 0.0, 0.0, w as f64, h as f64, false);
+                }
                 for m in &s.meters {
                     m.draw(cr, &s.measures);
                 }
@@ -421,7 +424,7 @@ impl SkinWindow {
                 let skin = sw.skin.borrow();
                 if w.is_active() { skin.on_focus.clone() } else { skin.on_unfocus.clone() }
             };
-            sw.run_skin_action(action, &Cell::new(false));
+            sw.run_skin_action("Rainmeter", action, &Cell::new(false));
         });
         window.present();
         sw
@@ -588,7 +591,7 @@ impl SkinWindow {
         // OnCloseAction, while the skin is still whole (Rainmeter runs it before tearing
         // the skin down). A config bang in it waits for GTK, so it can't close us twice
         let action = self.skin.borrow().on_close.clone();
-        self.run_skin_action(action, &Cell::new(false));
+        self.run_skin_action("Rainmeter", action, &Cell::new(false));
         self.flush_position();
         if let Some(timer) = self.timer.borrow_mut().take() {
             timer.remove();
@@ -616,19 +619,46 @@ impl SkinWindow {
     // One update of the whole skin: measures, then meters, then the window size, then a
     // repaint. Used by the Update= timer and by !Update.
     fn update(&self) {
-        // [$SkinX] and the others, in dynamic options, describe this skin
+        /* Measures one at the time, as in Rainmeter's UpdateMeasures: each one's OnUpdateAction
+           run right after it, with the skin let go, so the action can change the measure below */
+        let mut values = crate::measure::current_values(&self.skin.borrow().measures);
+        let mut i = 0;
+        loop {
+            // [$Skin] and the others, in dynamic option, describe this skin
+            let step = crate::dollarvar::with_skin(self.info(), || {
+                let mut s = self.skin.borrow_mut();
+                let m = s.measures.get_mut(i)?;  // None: past the last one (or a !Refresh shrank the list)
+                let action = crate::measure::update_one(m, &mut values);
+                Some((m.name().to_string(), action))
+            });
+            let Some((name, action)) = step else { break };
+            self.run_skin_action(&name, action, &self.in_update_action);
+            i += 1;
+        }
+        /* Meters the same way: each one's OnUpdateAction run right after it update.
+           Position start from where every meter is now, for [meter:X] references further down */
+        let mut layout = {
+            let s = self.skin.borrow();
+            meter::Layout::seeded(&s.meters, &s.measures)
+        };
+        let mut i = 0;
+        loop {
+            let step = crate::dollarvar::with_skin(self.info(), || {
+                let mut guard = self.skin.borrow_mut();
+                let s = &mut *guard;
+                let m = s.meters.get_mut(i)?;
+                // Meters refresh their dynamic options, graph record, and the meter is place
+                let action = meter::update_one(m, &s.measures, &values, &mut layout);
+                Some((m.name().to_string(), action))
+            });
+            let Some((name, action)) = step else { break };
+            self.run_skin_action(&name, action, &self.in_update_action);
+            i += 1;
+        }
+        //DynamicWindowSize=1: the window follows the meters
         let new_size = crate::dollarvar::with_skin(self.info(), || {
-            let mut guard = self.skin.borrow_mut();
-            let s = &mut *guard;
-            let values = crate::measure::update_all(&mut s.measures);
-            // Meters refresh their dynamic options, graphs record, and positions are worked out
-            meter::update_all(&mut s.meters, &s.measures, &values);
-            // DynamicWindowSize=1: the window follows the meters
-            if s.dynamic_window {
-                Some(skin::window_size(&s.meters, &s.measures, s.fixed_size))
-            } else {
-                None
-            }
+            let s = self.skin.borrow();
+            s.dynamic_window.then(|| skin::window_size(&s.meters, &s.measures, s.fixed_size))
         });
         // Resize outside the borrow, so nothing can ask to draw while the skin is locked
         if let Some((w, h)) = new_size {
@@ -638,7 +668,7 @@ impl SkinWindow {
         self.area.queue_draw();
         // OnUpdateAction run last, after the redraw, as in Rainmeter
         let action = self.skin.borrow().on_update.clone();
-        self.run_skin_action(action, &self.in_update_action);
+        self.run_skin_action("Rainmeter", action, &self.in_update_action);
     }
 
     // !Refresh: reads the skin file again and puts the new skin in place of the old one.
@@ -666,7 +696,7 @@ impl SkinWindow {
         self.start_timer();
         // OnRefreshAction: the skin is loaded again and its timer runs
         let action = self.skin.borrow().on_refresh.clone();
-        self.run_skin_action(action, &self.in_refresh_action);
+        self.run_skin_action("Rainmeter", action, &self.in_refresh_action);
     }
 
     // Runs the action of the first of `events` that anything at (x, y) has an action for
@@ -735,9 +765,10 @@ impl SkinWindow {
         }
     }
 
-    //Runs OnUpdateAction or OnRefreshAction, if the skin has it. 'busy' is that action's
-    //guard flag: while it's set, the action is already running and isn't started again.
-    fn run_skin_action(&self, action: Option<String>, busy: &Cell<bool>) {
+    /*Runs an action like OnUpdateAction or OnRefreshAction, if it's set. 'section' is where it
+      come from ("Rainmeter", or a measure's name), for [#CURRENTSECTION] and the like. 'busy'
+      is the guard flag: while it's set, the action is already running and isn't started again.*/
+    fn run_skin_action(&self, section: &str, action: Option<String>, busy: &Cell<bool>) {
         let Some(raw) = action else { return };
         if busy.get() {
             return;
@@ -746,7 +777,7 @@ impl SkinWindow {
         let info = self.info();
         let text = {
             let s = self.skin.borrow();
-            crate::dollarvar::with_skin(info, || s.expand_action("Rainmeter", &raw))
+            crate::dollarvar::with_skin(info, || s.expand_action(section, &raw))
         };
         busy.set(true);
         self.run_action(&text);

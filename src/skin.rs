@@ -15,24 +15,25 @@ pub struct Skin {
     pub measures: Vec<Box<dyn Measure>>,
     pub meters: Vec<Meter>,
     pub update_ms: u64,
-    pub background: Option<meter::Fill>, // BackgroundMode=2: SolidColor, SolidColor2, GradientAngle
+    pub background: Option<meter::Fill>,    // BackgroundMode=2: SolidColor, SolidColor2, GradientAngle
+    pub bevel: Option<meter::Bevel>,        //BevelType, BevelColor, BevelColor2, (BackgroudMode=2 only)
     pub width: i32,
     pub height: i32,
-    pub dynamic_window: bool, // DynamicWindowSize=1
-    pub fixed_size: (i32, i32), // SkinWidth/SkinHeight (0 = follow the meter)
-    pub drag_margins: [i32; 4], // DragMargins=Left,Top,Right,Bottom (all 0 = drag anywhere)
-    pub mouse: MouseActions,  // mouse actions of [Rainmeter], for clicks no meter takes
-    // OnRefreshAction, OnUpdateAction and OnCloseAction of [Rainmeter] (none = not set)
+    pub dynamic_window: bool,               // DynamicWindowSize=1
+    pub fixed_size: (i32, i32),             // SkinWidth/SkinHeight (0 = follow the meter)
+    pub drag_margins: [i32; 4],             // DragMargins=Left,Top,Right,Bottom (all 0 = drag anywhere)
+    pub mouse: MouseActions,                // mouse actions of [Rainmeter], for clicks no meter takes
+                                            // OnRefreshAction, OnUpdateAction and OnCloseAction of [Rainmeter] (none = not set)
     pub on_refresh: Option<String>,
     pub on_update: Option<String>,
     pub on_close: Option<String>,
     pub on_focus: Option<String>,
     pub on_unfocus: Option<String>,
-    pub vars: HashMap<String, String>, // the variable table, kept so !SetVariable can change it
-    pub file: PathBuf,         // the skin's .ini, the skins folder and the settings folder:
-    pub skins_root: PathBuf,   // what load() needs to read the skin again for !Refresh
+    pub vars: HashMap<String, String>,      // the variable table, kept so !SetVariable can change it
+    pub file: PathBuf,                      // the skin's .ini, the skins folder and the settings folder:
+    pub skins_root: PathBuf,                // what load() needs to read the skin again for !Refresh
     pub settings_dir: PathBuf,
-    pub config: String, // the config name, like illustro\Clock (#CURRENTCONFIG#)
+    pub config: String,                     // the config name, like illustro\Clock (#CURRENTCONFIG#)
 }
 
 impl Skin {
@@ -349,12 +350,23 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         // SolidColor default to gray (as in skin.cpp), SolideColor2 to SolidColor, GradientAngle to 0
         let gray = meter::Color { r: 128.0 / 255.0, g: 128.0 / 255.0, b: 128.0 / 255.0, a: 1.0 };
         let color = get("solidcolor").and_then(|v| meter::parse_color(&v)).unwrap_or(gray);
-        let color2 = get("solodcolor2").and_then(|v| meter::parse_color(&v)).unwrap_or(color);
+        let color2 = get("solidcolor2").and_then(|v| meter::parse_color(&v)).unwrap_or(color);
         let angle = get("gradientangle")
             .and_then(|v| formula::parse_number(&v).ok())
             .filter(|a| a.is_finite())
             .unwrap_or(0.0);
         Some(meter::Fill { color, color2, angle})
+    } else {
+        None
+    };
+    /* BevelType: 0 = none, 1 = raised, 2 = sunken. BevelColor default to withe and
+       BevelColor2 to black (skin.cpp). Rainmeter only draws it with BackgroundMode=2 */
+    let bevel = if background.is_some() {
+        let white = meter::Color { r: 1.0, g: 1.0, b:1.0, a:1.0};
+        let black = meter::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0};
+        let color = get("bevelcolor").and_then(|v| meter::parse_color(&v)).unwrap_or(white);
+        let color2 = get("bevelcolor2").and_then(|v| meter::parse_color(&v)).unwrap_or(black);
+        meter::Bevel::new(int("beveltype"), color, color2)
     } else {
         None
     };
@@ -382,6 +394,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         meters,
         update_ms: update_ms.max(50),
         background,
+        bevel,
         width,
         height,
         dynamic_window,

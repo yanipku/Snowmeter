@@ -12,7 +12,7 @@ The full checklist, compared with Rainmeter for Windows, is in [ROADMAP.md](ROAD
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 64 / 155 ≈ **41%**
+- Roadmap checklist: 67 / 155 ≈ **43%**
 
 - Compatibility with each kind of desktop (the desktop-dependent items in the roadmap):
   - X11: 4 / 7 ≈ **57%**

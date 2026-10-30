@@ -15,7 +15,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 64 / 155 ≈ **41%**
+- Roadmap checklist: 67 / 155 ≈ **43%**
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
   - X11: 4 / 7 ≈ **57%**
@@ -25,10 +25,10 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 ## Next up
 1. [ ] Remember each skin's position and settings (our own Rainmeter.ini; Wayland limits window placement)
 2. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
-3. [ ] The rest of the `[Rainmeter]` section: `Background` image with `BackgroundMode` 0/1/3/4 and `BackgroundMargins`, `BevelType`, `DefaultUpdateDivider`, `ContextTitle`/`ContextAction`, `Group`, `AccurateText`, `Blur`/`BlurRegion` (see "[Rainmeter] section" below)
+3. [ ] The rest of the `[Rainmeter]` section: `Background` image with `BackgroundMode` 0/1/3/4 and `BackgroundMargins`, `DefaultUpdateDivider`, `ContextTitle`/`ContextAction`, `Group`, `AccurateText`, `Blur`/`BlurRegion` (see "[Rainmeter] section" below)
 4. [ ] The rest of "Interaction": `MouseOverAction`/`MouseLeaveAction`, scroll actions, tooltips, the other bangs (`!WriteKeyValue`, the meter-group bangs, `!SetOptionGroup`, `!UpdateMeter`/`!UpdateMeasure`, `!CommandMeasure`), `IfCondition`, `IfAbove`/`IfBelow`/`IfEqual`, `IfMatch`, `OnChangeAction` (see "Interaction" below)
 5. [ ] The rest of the general measure options: `InvertMeasure`, `UpdateDivider`, `Substitute`/`RegExpSubstitute`, `AverageSize`, `Group` (see "General measure options" below)
-6. [ ] The rest of the general meter options: `BevelType`/`BevelColor`/`BevelColor2`, `AntiAlias`, `TransformationMatrix`, `UpdateDivider`, `Group`, `Container` (see "General meter options" below)
+6. [ ] The rest of the general meter options: `AntiAlias`, `TransformationMatrix`, `UpdateDivider`, `Group`, `Container` (see "General meter options" below)
 7. [ ] Right-click menu (with `ContextTitle`/`ContextAction`, and `!SetOption Rainmeter Context…`)
 8. [ ] Running programs from actions (safely: launched directly, never through a shell)
 9. [ ] The missing measures, and the missing options of the measures we have (see "Measures" below)
@@ -111,7 +111,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] `BackgroundMode=2` + `SolidColor`
 - [x] `SolidColor2` / `GradientAngle` (gradient background, same edge points as Rainmeter)
 - [ ] `Background` image, `BackgroundMode` 0/1/3/4, `BackgroundMargins`
-- [ ] `BevelType`
+- [x] `BevelType` (with `BevelColor`/`BevelColor2`; drawn only with `BackgroundMode=2`, as in Rainmeter)
 - [x] `SkinWidth` / `SkinHeight`
 - [x] `DragMargins` (negative left/top count from the far edge, as in Rainmeter)
 - [ ] `DefaultUpdateDivider`
@@ -148,7 +148,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
 - [ ] `IfMatch` actions
 - [ ] `OnChangeAction`
-- [ ] `OnUpdateAction` on meters and measures (every section reads it, Section.cpp)
+- [x] `OnUpdateAction` on meters and measures (every section reads it, Section.cpp)
 
 ## General measure options
 - [x] `MinValue` / `MaxValue`
@@ -186,7 +186,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] `Hidden`
 - [x] `MeasureName`, `MeasureName2`, …
 - [x] `SolidColor2` / `GradientAngle` (gradient meter background, same as the skin background)
-- [ ] `BevelType` / `BevelColor` / `BevelColor2`
+- [x] `BevelType` / `BevelColor` / `BevelColor2` (drawn 2 px outside the meter box; `AntiAlias` not read yet, so always the half-pixel offset)
 - [ ] `AntiAlias`
 - [ ] `TransformationMatrix`
 - [ ] `UpdateDivider`

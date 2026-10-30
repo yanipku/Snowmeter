@@ -20,6 +20,7 @@ pub struct Color {
 }
 
 const WHITE: Color = Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
+const BLACK: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
 const MAX_IMAGE_SIDE: i32 = 8192;
 const MAX_GRAPH_SIDE: f64 = 4096.0; // caps graph memory and drawing work
 const MAX_SERIES: usize = 5; // MeasureName .. MeasureName5
@@ -116,6 +117,47 @@ fn edge_point(angle: f64, w: f64, h: f64) -> (f64, f64) {
     let half = w.hypot(h) / 2.0;
     let cos_axis = (axis - h.atan2(w)).abs().cos();
     (w / 2.0 + half * cos_axis * rad.cos(), h / 2.0 + half * cos_axis * rad.sin())
+}
+
+/* BevelType=1 (raised) or 2 (sunken): a 2-pixel frame, light at top and left, dark at
+   the bottom and right. Sunken just swaps the colours (BevelColor / BevelColor2) */
+#[derive(Clone, Copy)]
+pub struct Bevel {
+    light: Color,
+    dark: Color,
+}
+
+impl Bevel {
+    //as in Rainmeter, 0 is none, 2 is sunken and any other number is raised
+    pub fn new(kind: i32, color: Color, color2: Color) -> Option<Bevel> {
+        match kind {
+            0 => None,
+            2 => Some(Bevel { light: color2, dark: color}),
+            _ => Some(Bevel { light: color, dark: color2}),
+        }
+    }
+
+    /* The eight 1-pixel lines of Rainmeter's Meter::DrawBevel. 'offset_mode' is the meter's
+       AntiAlias; without it, line move half a pixel so they land on whole pixels. */
+    pub fn draw(&self, cr: &cairo::Context, left: f64, top: f64, right: f64, bottom: f64, offset_mode: bool) {
+        let offset = if offset_mode { 0.0 } else { 0.5};
+        let (l, t, r, b, w) = (left + offset, top + offset, right, bottom, 1.0);
+        cr.set_line_width(w);
+        let line = |c: &Color, x1: f64, y1: f64, x2: f64, y2: f64| {
+            set_color(cr, c);
+            cr.move_to(x1, y1);
+            cr.line_to(x2, y2);
+            let _ = cr.stroke();
+        };
+        line(&self.light, l, t, l, b);
+        line(&self.light, l, t, r, t);
+        line(&self.light, l + w, t, l + w, b - w);
+        line(&self.light, l, t + w, r - w, t + w);
+        line(&self.dark, l, b, r, b);
+        line(&self.dark, r, t, r, b);
+        line(&self.dark, l + w, b - w, r - w, b - w);
+        line(&self.dark, r - w, t + w, r - w, b - w);
+    }
 }
 
 // Reads an option from a section and resolves #Variables# in it
@@ -544,6 +586,7 @@ pub struct Meter {
     x: f64, // where the meter really is (worked out by Layout)
     y: f64,
     solid: Option<Fill>,            // SolidColor/SolidColor2/GradientAngle: background of the whole meter, padding included
+    bevel: Option<Bevel>,           // BevelType/BevelColor/BevelColor2: a 2-pixel frame just outside the box
     padding: Padding,
     hidden: bool,                    // Hidden=1
     measure_idx: Vec<Option<usize>>, // MeasureName, MeasureName2, ... -> index into the measure list
@@ -554,6 +597,7 @@ pub struct Meter {
     // turns DynamicVariables on until the options are read again.
     reread_once: bool,
     mouse: MouseActions,            // LeftMouseUpAction and the like
+    on_update: String,              // OnUpdateAction, #var# filled in (runs even when hidden)
 }
 
 impl Meter {
@@ -620,6 +664,13 @@ impl Meter {
         } else {
             None
         };
+        /* BevelType: 0 = none, 1 = raised, 2 = sunken. BevelColor default to white,
+           BevelColor2 to black (meter.cpp) */
+        let bevel = Bevel::new(
+            num_opt(section, "beveltype", vars).map_or(0, |n| n as i32),
+            color_opt(section, "bevelcolor", vars).unwrap_or(WHITE),
+            color_opt(section, "bevelcolor2", vars).unwrap_or(BLACK),
+        );
         let padding = match opt(section, "padding", vars) {
             None => Padding::default(),
             Some(text) => parse_padding(&text).unwrap_or_else(|e| {
@@ -793,6 +844,7 @@ impl Meter {
             x: provisional(x_pos),
             y: provisional(y_pos),
             solid,
+            bevel,
             padding,
             hidden,
             measure_idx,
@@ -802,6 +854,9 @@ impl Meter {
             reread_once: false,
             // From `raw`: section variables in actions wait until the click
             mouse: MouseActions::read(raw, vars),
+            on_update: raw.options.get("onupdateaction")
+                .map(|v| ini::resolve(v, vars))
+                .unwrap_or_default(),
         })
     }
 
@@ -972,6 +1027,10 @@ impl Meter {
         if let Some(bg) = &self.solid {
             bg.paint(cr, bx, by, ow, oh);
         }
+        if let Some(bevel) = &self.bevel {
+            // Drawn outside the meter, 2 pixel beyond each side (meter.cpp)
+            bevel.draw(cr, bx - 2.0, by - 2.0, bx + ow + 2.0, by + oh + 2.0, false);
+        }
         let (cx, cy) = (bx + self.padding.left, by + self.padding.top);
 
         match &self.kind {
@@ -1122,7 +1181,7 @@ impl Layout {
 
     // Starts from where every meter currently is, so a [Meter:X] reference to a meter
     // further down sees its position from the last update, as in Rainmeter
-    fn seeded(meters: &[Meter], measures: &[Box<dyn Measure>]) -> Layout {
+    pub fn seeded(meters: &[Meter], measures: &[Box<dyn Measure>]) -> Layout {
         let mut layout = Layout::new();
         for m in meters {
             layout.geom.insert(m.name.to_lowercase(), m.rect(measures));
@@ -1158,14 +1217,26 @@ impl Layout {
     }
 }
 
-// Updates every meter in order: dynamic ones rebuild, graphs record, and positions
-// are worked out against the meter before.
+#[cfg(test)] // the app runs its own loop (manager.rs update), so only tests use this
 pub fn update_all(meters: &mut [Meter], measures: &[Box<dyn Measure>], values: &Values) {
     let mut layout = Layout::seeded(meters, measures);
     for m in meters.iter_mut() {
-        m.update(measures, values, layout.geometry());
-        layout.place(m, measures);
+        update_one(m, measures, values, &mut layout);
     }
+}
+
+/* Updates one meter and places it, and returns its OnUpdateAction (copied, so the caller can
+let go of the skin first). As in Rainmeter, a hidden meter still runs it. */
+pub fn update_one(
+    m: &mut Meter,
+    measures: &[Box<dyn Measure>],
+    values: &Values,
+    layout: &mut Layout,
+) -> Option<String> {
+    m.update(measures, values, layout.geometry());
+    layout.place(m, measures);
+    let action = m.on_update.trim();
+    (!action.is_empty()).then(|| action.to_string())
 }
 
 // The action a mouse event at (x, y) runs, as in Rainmeter's Skin::DoAction. Meters are
@@ -1199,6 +1270,7 @@ mod tests {
             x: 0.0,
             y: 0.0,
             solid: None,
+            bevel: None,
             padding: Padding::default(),
             hidden: false,
             measure_idx: Vec::new(),
@@ -1207,6 +1279,7 @@ mod tests {
             dynamic: false,
             reread_once: false,
             mouse: MouseActions::default(),
+            on_update: String::new(),
         }
     }
 
