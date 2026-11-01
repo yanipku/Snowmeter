@@ -332,7 +332,7 @@ fn measure_text(
     })
 }
 
-fn load_image(name: &str, base_dir: &Path, w: Option<f64>, h: Option<f64>) -> Option<Pixbuf> {
+pub fn load_image(name: &str, base_dir: &Path, w: Option<f64>, h: Option<f64>) -> Option<Pixbuf> {
     if name.trim().is_empty() {
         return None;
     }

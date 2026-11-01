@@ -2,11 +2,35 @@ use crate::ini;
 use crate::measure::{number_option, Measure, Ranged, Switch};
 use crate::meter::{self, Layout, Meter};
 use crate::mouse::{MouseActions, MouseEvent};
+use gtk4::cairo;
+use gtk4::gdk::prelude::GdkCairoContextExt;
+use gtk4::gdk_pixbuf::Pixbuf;
 use crate::{calc, clock, cpu, fonts, formula, memory};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
 };
+// What [Rainmeter] paints behind the meters (BackgroundMode; None = mode 1, nothing)
+pub enum Background {
+    Solid(meter::Fill), // 2: SolidColor, SolidColr2, GradientAngle
+    Image(Pixbuf),      // 0: the Background= image; the window takes its size
+}
+
+impl Background {
+    pub fn draw(&self, cr: &cairo::Context, w: f64, h: f64) {
+        match self {
+            Background::Solid(fill) => fill.paint(cr, 0.0, 0.0, w, h),
+            Background::Image(p) => {
+                // Stretch to the window, wich is only another size with SkinWidth/SkinHeight
+                let _ = cr.save();
+                cr.scale(w / p.width() as f64, h / p.height() as f64);
+                cr.set_source_pixbuf(p, 0.0, 0.0);
+                let _ = cr.paint();
+                let _ = cr.restore();
+            }
+        }
+    }
+}
 
 const MAX_WINDOW_SIDE: f64 = 16384.0; // a skin can't ask for an absurdly large window
 const MAX_STYLES: usize = 16; // parents a single MeterStyle may list
@@ -15,7 +39,7 @@ pub struct Skin {
     pub measures: Vec<Box<dyn Measure>>,
     pub meters: Vec<Meter>,
     pub update_ms: u64,
-    pub background: Option<meter::Fill>,    // BackgroundMode=2: SolidColor, SolidColor2, GradientAngle
+    pub background: Option<Background>,    // BackgroundMode 0 or 2 (None = 1: nothing painted)
     pub bevel: Option<meter::Bevel>,        //BevelType, BevelColor, BevelColor2, (BackgroudMode=2 only)
     pub width: i32,
     pub height: i32,
@@ -89,7 +113,13 @@ pub fn in_drag_area(margins: [i32; 4], (w,h): (i32, i32), x: f64, y:f64) -> bool
 
 /* Window size = bounding box of all meters plus a small margin. A side of
    'fixed' (SkinWidth/SkinHeight) above 0 replace that side , as in Rainmeter. */
-pub fn window_size(meters: &[Meter], measures: &[Box<dyn Measure>], fixed: (i32, i32)) -> (i32, i32) {
+pub fn window_size(meters: &[Meter], measures: &[Box<dyn Measure>], fixed: (i32, i32),
+                    background: Option<&Background>) -> (i32, i32) {
+    // BackgroundMode=0: the window is the image's size, whatever the meters need
+    if let Some(Background::Image(p)) = background {
+        let side = |v: i32, fixed: i32| if fixed > 0 { fixed } else { v }.min(MAX_WINDOW_SIDE as i32);
+        return (side(p.width(), fixed.0), side(p.height(), fixed.1));
+    }
     let (mut right, mut bottom) = (0.0_f64, 0.0_f64);
     for m in meters {
         let (r, b) = m.bounds(measures);
@@ -346,22 +376,32 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
             *slot = formula::parse_number(part.trim()).map_or(0, |n| n as i32);
         }
     }
-    let background = if get("backgroundmode").as_deref() == Some("2") {
-        // SolidColor default to gray (as in skin.cpp), SolideColor2 to SolidColor, GradientAngle to 0
-        let gray = meter::Color { r: 128.0 / 255.0, g: 128.0 / 255.0, b: 128.0 / 255.0, a: 1.0 };
-        let color = get("solidcolor").and_then(|v| meter::parse_color(&v)).unwrap_or(gray);
-        let color2 = get("solidcolor2").and_then(|v| meter::parse_color(&v)).unwrap_or(color);
-        let angle = get("gradientangle")
-            .and_then(|v| formula::parse_number(&v).ok())
-            .filter(|a| a.is_finite())
-            .unwrap_or(0.0);
-        Some(meter::Fill { color, color2, angle})
-    } else {
-        None
+    /* BackgroundMode: 0 = image (the default), 1 = nothing, 2 = solid color,
+       Mode with no Background= becomes 1, as in Skin.cpp. */
+    let background = match int("backgroundmode") {
+        2 => {
+            // SolidColor default to gray (as in skin.cpp), SolideColor2 to SolidColor, GradientAngle to 0
+            let gray = meter::Color { r: 128.0 / 255.0, g: 128.0 / 255.0, b: 128.0 / 255.0, a: 1.0 };
+            let color = get("solidcolor").and_then(|v| meter::parse_color(&v)).unwrap_or(gray);
+            let color2 = get("solidcolor2").and_then(|v| meter::parse_color(&v)).unwrap_or(color);
+            let angle = get("gradientangle")
+                .and_then(|v| formula::parse_number(&v).ok())
+                .filter(|a| a.is_finite())
+                .unwrap_or(0.0);
+            Some(Background::Solid(meter::Fill { color, color2, angle}))
+        }
+        0 => get("background").filter(|n| !n.trim().is_empty()).and_then(|name|{
+            let image = meter::load_image(&name, &base_dir, None, None);
+            if image.is_none() {
+                eprintln!("Background image {name} couldn't be loaded");
+            }
+            image.map(Background::Image)
+        }),
+        _ => None,
     };
     /* BevelType: 0 = none, 1 = raised, 2 = sunken. BevelColor default to withe and
        BevelColor2 to black (skin.cpp). Rainmeter only draws it with BackgroundMode=2 */
-    let bevel = if background.is_some() {
+    let bevel = if matches!(background, Some(Background::Solid(_))) {
         let white = meter::Color { r: 1.0, g: 1.0, b:1.0, a:1.0};
         let black = meter::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0};
         let color = get("bevelcolor").and_then(|v| meter::parse_color(&v)).unwrap_or(white);
@@ -388,7 +428,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
     let on_focus = action("onfocusaction");
     let on_unfocus = action("onunfocusaction");
 
-    let (width, height) = window_size(&meters, &measures, fixed_size);
+    let (width, height) = window_size(&meters, &measures, fixed_size, background.as_ref());
     Ok(Skin {
         measures,
         meters,

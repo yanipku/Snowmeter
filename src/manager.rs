@@ -259,7 +259,7 @@ impl SkinWindow {
                 let Some(sw) = draw_me.upgrade() else { return };
                 let s = sw.skin.borrow();
                 if let Some(bg) = &s.background {
-                    bg.paint(cr, 0.0, 0.0, w as f64, h as f64);
+                    bg.draw(cr,w as f64, h as f64);
                 }
                 if let Some(bevel) = &s.bevel {
                     bevel.draw(cr, 0.0, 0.0, w as f64, h as f64, false);
@@ -658,7 +658,7 @@ impl SkinWindow {
         //DynamicWindowSize=1: the window follows the meters
         let new_size = crate::dollarvar::with_skin(self.info(), || {
             let s = self.skin.borrow();
-            s.dynamic_window.then(|| skin::window_size(&s.meters, &s.measures, s.fixed_size))
+            s.dynamic_window.then(|| skin::window_size(&s.meters, &s.measures, s.fixed_size, s.background.as_ref()))
         });
         // Resize outside the borrow, so nothing can ask to draw while the skin is locked
         if let Some((w, h)) = new_size {
