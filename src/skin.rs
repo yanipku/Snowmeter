@@ -12,8 +12,10 @@ use std::{
 };
 // What [Rainmeter] paints behind the meters (BackgroundMode; None = mode 1, nothing)
 pub enum Background {
-    Solid(meter::Fill), // 2: SolidColor, SolidColr2, GradientAngle
-    Image(Pixbuf),      // 0: the Background= image; the window takes its size
+    Image(Pixbuf),              // 0: the Background= image; the window takes its size
+    Solid(meter::Fill),         // 2: SolidColor, SolidColr2, GradientAngle
+    Scaled(Pixbuf, [i32; 4]),   // 3: Background= cut at BackgroundMargins into 9 pieces
+    Tiled(Pixbuf),              // 4: Background= repeated over the window
 }
 
 impl Background {
@@ -28,8 +30,52 @@ impl Background {
                 let _ = cr.paint();
                 let _ = cr.restore();
             }
+            Background::Scaled(p, m) => {
+                /* corners keep their size, edge stretch one way, the center both ways
+                   (Skin.cpp Redraw, BGMODE_SCALED_IMAGE). Cut line: 0, left, size-right, size */
+                let [l, t, r, b,] = *m;
+                let cuts = |size: i32, a: i32, z: i32| {
+                    let c1 = a.clamp(0, size);
+                    [0, c1, (size - z).clamp(c1, size), size]
+                };
+                let (sx, sy) = (cuts(p.width(),l, r), cuts(p.height(),t, b,));
+                let (dx, dy) = (cuts(w as i32, l, r), cuts(h as i32, t, b));
+                for row in 0..3 {
+                    for col in 0..3 {
+                        let src = (sx[col], sy[row], sx[col + 1] - sx[col], sy[row + 1] - sy [row]);
+                        let dst = (dx[col], dy[row], dx[col + 1] - dx[col], dy[row + 1] - dy[row]);
+                        draw_piece(cr, p, src, dst);
+                    }
+                }
+            }
+            Background::Tiled(p) => {
+                //Repeated from the top-left corner over the whole window
+                cr.set_source_pixbuf(p, 0.0, 0.0);
+                cr.source().set_extend(cairo::Extend::Repeat);
+                cr.rectangle(0.0, 0.0, w, h);
+                let _ = cr.fill();
+            
+            }
         }
     }
+}
+
+/* Draw the part (x, y, w, h) of the image stretched over the window rectangle (x, y, w, h).
+   Empty pieces (a margins of 0) are skipped, as rainmeter does. */
+fn draw_piece(cr: &cairo::Context, p: &Pixbuf, (sx, sy, sw, sh): (i32, i32, i32, i32),
+                (dx, dy, dw, dh): (i32, i32, i32, i32)) {
+    if sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0 {
+        return;
+    }
+    let piece = p.new_subpixbuf(sx, sy, sw, sh); // a view into the same pixels, no copy
+    let _ = cr.save();
+    cr.translate(dx as f64, dy as f64);
+    cr.scale(dw as f64 / sw as f64, dh as f64 / sh as f64);
+    cr.set_source_pixbuf(&piece, 0.0, 0.0);
+    cr.source().set_extend(cairo::Extend::Pad); // stretched edges keep their color, no fade
+    cr.rectangle(0.0, 0.0, sw as f64, sh as f64);
+    let _ = cr.fill();
+    let _ = cr.restore();
 }
 
 const MAX_WINDOW_SIDE: f64 = 16384.0; // a skin can't ask for an absurdly large window
@@ -46,6 +92,7 @@ pub struct Skin {
     pub dynamic_window: bool,               // DynamicWindowSize=1
     pub fixed_size: (i32, i32),             // SkinWidth/SkinHeight (0 = follow the meter)
     pub drag_margins: [i32; 4],             // DragMargins=Left,Top,Right,Bottom (all 0 = drag anywhere)
+    pub background_margins: [i32; 4],       // BackgroundMArgins=Left,Top,Right,Bottom: space around the meters
     pub mouse: MouseActions,                // mouse actions of [Rainmeter], for clicks no meter takes
                                             // OnRefreshAction, OnUpdateAction and OnCloseAction of [Rainmeter] (none = not set)
     pub on_refresh: Option<String>,
@@ -111,26 +158,34 @@ pub fn in_drag_area(margins: [i32; 4], (w,h): (i32, i32), x: f64, y:f64) -> bool
     x >= x1 as f64 && x < x2 as f64 && y >= y1 as f64 && y < y2 as f64
 }
 
-/* Window size = bounding box of all meters plus a small margin. A side of
-   'fixed' (SkinWidth/SkinHeight) above 0 replace that side , as in Rainmeter. */
+/* Window size = exact bounding box of all meters (Skin.cpp ResizeWindow). 
+   A side of 'fixed' (SkinWidth/SkinHeight) above 0 replace that side , as in Rainmeter. */
 pub fn window_size(meters: &[Meter], measures: &[Box<dyn Measure>], fixed: (i32, i32),
-                    background: Option<&Background>) -> (i32, i32) {
+                    background: Option<&Background>, margins: [i32; 4]) -> (i32, i32) {
     // BackgroundMode=0: the window is the image's size, whatever the meters need
     if let Some(Background::Image(p)) = background {
         let side = |v: i32, fixed: i32| if fixed > 0 { fixed } else { v }.min(MAX_WINDOW_SIDE as i32);
         return (side(p.width(), fixed.0), side(p.height(), fixed.1));
     }
-    let (mut right, mut bottom) = (0.0_f64, 0.0_f64);
+    let [left, top, right_m, bottom_m] = margins.map(f64::from);
+    let (mut right, mut bottom) = (left, top);
     for m in meters {
         let (r, b) = m.bounds(measures);
         right = right.max(r);
         bottom = bottom.max(b);
     }
+    right += right_m;
+    bottom += bottom_m;
+    //BackgroundMode=3: never smaller than the image (re3sizeWindow)
+    if let Some(Background::Scaled(p, _ ) | Background::Tiled(p)) = background {
+        right = right.max(p.width() as f64);
+        bottom = bottom.max(p.height() as f64);
+    }
     let side = |v: f64, fixed: i32| {
         if fixed > 0 {
             fixed.min(MAX_WINDOW_SIDE as i32)
         } else {
-            (v + 10.0).ceil().clamp(50.0, MAX_WINDOW_SIDE) as i32
+            v.ceil().clamp(1.0, MAX_WINDOW_SIDE) as i32
         }
     };
     (side(right, fixed.0), side(bottom, fixed.1))
@@ -369,16 +424,23 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         .map_or(0, |n| n as i32)
     };
     let fixed_size = (int("skinwidth"), int("skinheight"));
-    // DragMargins=Left,Top,Right,Bottom: whole numbers, formulas allowed; missing = 0
-    let mut drag_margins = [0; 4];
-    if let Some(v) = get("dragmargins") {
-        for (slot, part) in drag_margins.iter_mut().zip(v.split(',')) {
-            *slot = formula::parse_number(part.trim()).map_or(0, |n| n as i32);
+    // Left,Top,Right,Bottom: whole numbers, formulas allowed; missing = 0
+    // (DragMargins, BackgroundMargins: both use Rainmeter's ReadRECT)
+    let rect = |key: &str| {
+        let mut r = [0; 4];
+        if let Some(v) = get(key) {
+            for (slot, part) in r.iter_mut().zip(v.split(',')) {
+                *slot = formula::parse_number(part.trim()).map_or(0, |n| n as i32);
+            }
         }
-    }
-    /* BackgroundMode: 0 = image (the default), 1 = nothing, 2 = solid color,
+        r
+    };
+    let drag_margins = rect("dragmargins");
+    let background_margins = rect("backgroundmargins");
+    /* BackgroundMode: 0 = image (the default), 1 = nothing, 2 = solid color, 3 = scaled image
        Mode with no Background= becomes 1, as in Skin.cpp. */
-    let background = match int("backgroundmode") {
+    let mode = int("backgroundmode");
+    let background = match mode {
         2 => {
             // SolidColor default to gray (as in skin.cpp), SolideColor2 to SolidColor, GradientAngle to 0
             let gray = meter::Color { r: 128.0 / 255.0, g: 128.0 / 255.0, b: 128.0 / 255.0, a: 1.0 };
@@ -390,12 +452,16 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
                 .unwrap_or(0.0);
             Some(Background::Solid(meter::Fill { color, color2, angle}))
         }
-        0 => get("background").filter(|n| !n.trim().is_empty()).and_then(|name|{
+        0 | 3 | 4 => get("background").filter(|n| !n.trim().is_empty()).and_then(|name|{
             let image = meter::load_image(&name, &base_dir, None, None);
             if image.is_none() {
                 eprintln!("Background image {name} couldn't be loaded");
             }
-            image.map(Background::Image)
+            image.map(|p| match mode {
+                3 => Background::Scaled(p, background_margins),
+                4 => Background::Tiled(p),
+                _ => Background::Image(p),
+            })
         }),
         _ => None,
     };
@@ -428,7 +494,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
     let on_focus = action("onfocusaction");
     let on_unfocus = action("onunfocusaction");
 
-    let (width, height) = window_size(&meters, &measures, fixed_size, background.as_ref());
+    let (width, height) = window_size(&meters, &measures, fixed_size, background.as_ref(), background_margins);
     Ok(Skin {
         measures,
         meters,
@@ -440,6 +506,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         dynamic_window,
         fixed_size,
         drag_margins,
+        background_margins,
         mouse,
         on_refresh,
         on_update,

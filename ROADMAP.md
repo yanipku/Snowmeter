@@ -15,7 +15,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 67 / 155 ≈ **43%**
+- Roadmap checklist: 68 / 155 ≈ **44%**
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
   - X11: 4 / 7 ≈ **57%**
@@ -25,8 +25,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 ## Next up
 1. [ ] Remember each skin's position and settings (our own Rainmeter.ini; Wayland limits window placement)
 2. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
-3. [ ] The rest of the `[Rainmeter]` section: `Background` image with `BackgroundMode` 0/1/3/4 and `BackgroundMargins`, `DefaultUpdateDivider`, `ContextTitle`/`ContextAction`, `Group`, `AccurateText`, `Blur`/`BlurRegion` (see "[Rainmeter] section" below)
-   - Fix first, next session: the window size from the meters adds 10 px and has a 50 px minimum. Rainmeter uses the meters' exact bounding box (Skin.cpp `ResizeWindow`)
+3. [ ] The rest of the `[Rainmeter]` section: `DefaultUpdateDivider`, `ContextTitle`/`ContextAction`, `Group`, `AccurateText`, `Blur`/`BlurRegion` (see "[Rainmeter] section" below)
 4. [ ] The rest of "Interaction": `MouseOverAction`/`MouseLeaveAction`, scroll actions, tooltips, the other bangs (`!WriteKeyValue`, the meter-group bangs, `!SetOptionGroup`, `!UpdateMeter`/`!UpdateMeasure`, `!CommandMeasure`), `IfCondition`, `IfAbove`/`IfBelow`/`IfEqual`, `IfMatch`, `OnChangeAction` (see "Interaction" below)
 5. [ ] The rest of the general measure options: `InvertMeasure`, `UpdateDivider`, `Substitute`/`RegExpSubstitute`, `AverageSize`, `Group` (see "General measure options" below)
 6. [ ] The rest of the general meter options: `AntiAlias`, `TransformationMatrix`, `UpdateDivider`, `Group`, `Container` (see "General meter options" below)
@@ -111,7 +110,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] `DynamicWindowSize`
 - [x] `BackgroundMode=2` + `SolidColor`
 - [x] `SolidColor2` / `GradientAngle` (gradient background, same edge points as Rainmeter)
-- [ ] `Background` image, `BackgroundMode` 0/1/3/4, `BackgroundMargins` 🟡 modes 0 (image, window takes its size) and 1 (nothing) done. Still to do: 3 (scaled with `BackgroundMargins`), 4 (tiled)
+- [x] `Background` image, `BackgroundMode` 0/1/3/4, `BackgroundMargins` (0 = image, window takes its size; 3 = cut into 9 pieces at the margins; 4 = tiled; the margins add space around the meters in every mode, as in Skin.cpp `ResizeWindow`)
 - [x] `BevelType` (with `BevelColor`/`BevelColor2`; drawn only with `BackgroundMode=2`, as in Rainmeter)
 - [x] `SkinWidth` / `SkinHeight`
 - [x] `DragMargins` (negative left/top count from the far edge, as in Rainmeter)

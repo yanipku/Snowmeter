@@ -658,7 +658,7 @@ impl SkinWindow {
         //DynamicWindowSize=1: the window follows the meters
         let new_size = crate::dollarvar::with_skin(self.info(), || {
             let s = self.skin.borrow();
-            s.dynamic_window.then(|| skin::window_size(&s.meters, &s.measures, s.fixed_size, s.background.as_ref()))
+            s.dynamic_window.then(|| skin::window_size(&s.meters, &s.measures, s.fixed_size, s.background.as_ref(), s.background_margins))
         });
         // Resize outside the borrow, so nothing can ask to draw while the skin is locked
         if let Some((w, h)) = new_size {
