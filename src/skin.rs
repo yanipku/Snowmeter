@@ -386,6 +386,12 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         rm.and_then(|s| s.options.get(key)).map(|v| ini::resolve(v, &vars))
     });
 
+    //AccurateText=1: exact text boxes. 0 (the default) adds GDI+'s spacing, as Rainmeter does
+    let accurate_text = rm
+        .and_then(|s| s.options.get("accuratetext"))
+        .and_then(|v| formula::parse_number(&ini::resolve(v, &vars)).ok())
+        .is_some_and(|n| n != 0.0);
+
     // Pass 2: meters, in order. Each is placed as soon as it is built, so [MeterName:X]
     // and relative positions (X=10R) can use the meters before it.
     let mut meters: Vec<Meter> = Vec::new();
@@ -402,6 +408,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         if let Some(mut m) =
             Meter::from_section(&styled, &vars, &measures, &values, layout.geometry(), &base_dir)
         {
+            m.set_accurate_text(accurate_text);
             layout.place(&mut m, &measures);
             meters.push(m);
         }

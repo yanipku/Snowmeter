@@ -15,7 +15,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 68 / 155 ≈ **44%**
+- Roadmap checklist: 69 / 156 ≈ **44%**
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
   - X11: 4 / 7 ≈ **57%**
@@ -25,18 +25,24 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 ## Next up
 1. [ ] Remember each skin's position and settings (our own Rainmeter.ini; Wayland limits window placement)
 2. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
-3. [ ] The rest of the `[Rainmeter]` section: `DefaultUpdateDivider`, `ContextTitle`/`ContextAction`, `Group`, `AccurateText`, `Blur`/`BlurRegion` (see "[Rainmeter] section" below)
-4. [ ] The rest of "Interaction": `MouseOverAction`/`MouseLeaveAction`, scroll actions, tooltips, the other bangs (`!WriteKeyValue`, the meter-group bangs, `!SetOptionGroup`, `!UpdateMeter`/`!UpdateMeasure`, `!CommandMeasure`), `IfCondition`, `IfAbove`/`IfBelow`/`IfEqual`, `IfMatch`, `OnChangeAction` (see "Interaction" below)
-5. [ ] The rest of the general measure options: `InvertMeasure`, `UpdateDivider`, `Substitute`/`RegExpSubstitute`, `AverageSize`, `Group` (see "General measure options" below)
-6. [ ] The rest of the general meter options: `AntiAlias`, `TransformationMatrix`, `UpdateDivider`, `Group`, `Container` (see "General meter options" below)
-7. [ ] Right-click menu (with `ContextTitle`/`ContextAction`, and `!SetOption Rainmeter Context…`)
-8. [ ] Running programs from actions (safely: launched directly, never through a shell)
-9. [ ] The missing measures, and the missing options of the measures we have (see "Measures" below)
-10. [ ] Finish the meters we have: String, Bar, Image, Line, Histogram (see their sections below)
-11. [ ] The missing meter types: `Shape`, `Roundline`, `Rotator`, `Bitmap`, `Button`, `Svg`, `TextEdit` (see "Missing meter types" below)
-12. [ ] Tray icon (GNOME hides tray icons without an extension)
-13. [ ] Manage window: a GUI for Snowmeter outside the terminal, like Rainmeter's Manage dialog (see "Manage window" below)
-14. [ ] SkinInstaller: install `.rmskin` packages (see "Skin installer" below)
+3. [ ] `[Rainmeter]` `Group` (skin groups for the config bangs)
+4. [ ] `[Rainmeter]` `Blur` / `BlurRegion`
+5. [ ] Ctrl+C / SIGTERM runs `OnCloseAction` (signal handling)
+6. [ ] `MouseOverAction` / `MouseLeaveAction`
+7. [ ] Scroll actions (`MouseScrollUpAction`, …)
+8. [ ] Tooltips (`ToolTipText`, `ToolTipTitle`, …)
+9. [ ] Bang `!WriteKeyValue`
+10. [ ] Bangs `!UpdateMeter` / `!UpdateMeasure`
+11. [ ] Bang `!CommandMeasure`
+12. [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction`
+13. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
+14. [ ] `IfMatch` actions
+15. [ ] `OnChangeAction`
+16. [ ] Measure option `InvertMeasure`
+17. [ ] Measure option `UpdateDivider`
+18. [ ] `[Rainmeter]` `DefaultUpdateDivider` (measures first; meters once meter `UpdateDivider` is done)
+19. [ ] Measure options `Substitute` / `RegExpSubstitute`
+20. [ ] Measure option `AverageSize`
 
 ---
 
@@ -120,7 +126,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [ ] `ContextTitle` / `ContextAction`
 - [ ] `Group`
 - [x] `LocalFont`
-- [ ] `AccurateText`
+- [x] `AccurateText` (0, the default, adds GDI+'s spacing like Rainmeter: size/6 each side, size/72 per character, size/8 below; the per-character spacing is only measured, not drawn, until meter `AntiAlias` exists)
 - [ ] `Blur` / `BlurRegion` (X11: only some compositors, e.g. KWin's blur hint · Wayland (layer-shell): KDE has a blur protocol, others vary · GNOME: no)
 
 ## Interaction
@@ -138,6 +144,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] Bangs: `!Refresh` (this skin only; reloads the file, restarts the timer, keeps the old skin on an error)
 - [ ] Bangs: `!UpdateMeter`, `!UpdateMeasure`
 - [x] Bangs: `!EnableMeasure`, `!DisableMeasure`, `!ToggleMeasure`, `!PauseMeasure`, `!UnpauseMeasure`, `!TogglePauseMeasure` (seen at the next update; disabled = 0, paused = last value)
+- [ ] Bangs: `!EnableMeasureGroup`, `!DisableMeasureGroup`, `!ToggleMeasureGroup`, `!PauseMeasureGroup`, `!UnpauseMeasureGroup`, `!TogglePauseMeasureGroup`
 - [ ] Bangs: `!CommandMeasure`
 - [x] Bangs: `!Move` (plain pixel numbers from the primary monitor; KeepOnScreen applies, as in Rainmeter)
 - [x] Bangs for the window settings: `!ZPos`, `!Draggable`, `!ClickThrough`, `!KeepOnScreen`, `!SnapEdges` (1, 0, or -1 to toggle; the new value is saved to the settings file)

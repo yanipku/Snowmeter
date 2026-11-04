@@ -332,6 +332,20 @@ fn measure_text(
     })
 }
 
+/*  The box Rainmeter give one line of text, from its measured (width, hieght).
+    AccurateText=0 adds GDI+'s spacing (TextFormat::GetMetrics): size/6 on each side,
+    size/72 per character and size/8 below. Text with no width gets no hieght either. */
+fn text_box(accurate: bool, size: f64, text: &str, (w,h): (f64, f64)) -> (f64, f64) {
+    if w <= 0.0 {
+        (0.0, 0.0)
+    } else if accurate {
+        (w, h)
+    } else {
+        let chars = text.chars().count() as f64;
+        (w + size / 3.0 + chars * size / 72.0, h + size /8.0)
+    }
+}
+
 pub fn load_image(name: &str, base_dir: &Path, w: Option<f64>, h: Option<f64>) -> Option<Pixbuf> {
     if name.trim().is_empty() {
         return None;
@@ -598,6 +612,7 @@ pub struct Meter {
     reread_once: bool,
     mouse: MouseActions,            // LeftMouseUpAction and the like
     on_update: String,              // OnUpdateAction, #var# filled in (runs even when hidden)
+    accurate_text: bool,            // [Rainmeter] AccurateText; false = GDI+ spacing (the default)
 }
 
 impl Meter {
@@ -857,6 +872,8 @@ impl Meter {
             on_update: raw.options.get("onupdateaction")
                 .map(|v| ini::resolve(v, vars))
                 .unwrap_or_default(),
+            // A skin-wide setting: a rebuilt meter keeps it
+            accurate_text: prev.is_some_and(|p| p.accurate_text),
         })
     }
 
@@ -899,6 +916,11 @@ impl Meter {
     // For !ToggleMeter
     pub fn is_hidden(&self) -> bool {
         self.hidden
+    }
+
+    // [Rainmeter] AccurateText, set by the skin after the meter is built
+    pub fn set_accurate_text(&mut self, on: bool) {
+        self.accurate_text = on;
     }
 
     pub fn name(&self) -> &str {
@@ -954,6 +976,7 @@ impl Meter {
             Kind::Text { prefix, template, postfix, case, size, face, slant, weight, w, h, .. } => {
                 let text = fill_template(prefix, template, postfix, *case, &self.measure_idx, measures);
                 let (mw, mh, _) = measure_text(face, *slant, *weight, *size, &text);
+                let (mw, mh) = text_box(self.accurate_text, *size, &text, (mw, mh));
                 (w.unwrap_or(mw.ceil()), h.unwrap_or(mh.ceil()))
             }
             Kind::Image { pixbuf: Some(p), .. } => (p.width() as f64, p.height() as f64),
@@ -1043,8 +1066,12 @@ impl Meter {
                 // aligned inside it, which only matters when W or H is bigger than the text
                 let (ax, ay) = self.align();
                 let (tw, th, ascent) = measure_text(face, *slant, *weight, *size, &text);
-                let tx = cx + ax * (cw - tw);
-                let ty = cy + ay * (ch - th);
+                let (_, bh) = text_box(self.accurate_text, *size, &text, (tw, th));
+                /*  Without AccurateText the text sits size/6 inside the left or right edge,
+                    and centered text stays centered (canvas.cpp GetTextDrawPosition) */
+                let inset = if self.accurate_text {0.0} else { *size / 6.0 };
+                let tx = cx + ax * (cw - tw) + inset * (1.0 - 2.0 * ax);
+                let ty = cy + ay * (ch - bh);
                 // Cairo draws text from its baseline, so move down by the ascent
                 cr.move_to(tx, ty + ascent);
                 let _ = cr.show_text(&text);
@@ -1280,6 +1307,7 @@ mod tests {
             reread_once: false,
             mouse: MouseActions::default(),
             on_update: String::new(),
+            accurate_text: false,
         }
     }
 
@@ -1492,6 +1520,17 @@ mod tests {
         assert_eq!(parse_align("LeftTop"), Some((0.0, 0.0)));
         assert_eq!(parse_align("Middle"), None);
         assert_eq!(parse_align("RightLeft"), None);
+    }
+
+    #[test]
+    fn text_box_adds_gdi_spacing() {
+        // AccurateText=1 keep the measured box; empty text has no box in iether mod
+        assert_eq!(text_box(true, 12.0, "ab", (20.0, 14.0)), (20.0, 14.0));
+        assert_eq!(text_box(false, 12.0, "", (0.0, 14.0)), (0.0, 0.0));
+        // AccurateText=0 at 12 px: 12/3 wider, plus 12/72 per character, and 12/8 taller
+        let (w, h) = text_box(false, 12.0, "ab", (20.0, 14.0));
+        assert!((w - (20.0 + 4.0 + 2.0 * 12.0 / 72.0)).abs() < 1e-9);
+        assert_eq!(h, 15.5);
     }
 
     #[test]
