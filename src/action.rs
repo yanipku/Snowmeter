@@ -46,6 +46,8 @@ pub enum Target {
     This,           // the skin whose action it is
     Config(String), // the skin of another config, like illustro\Clock
     All,            // every running skin
+    Group(String),  // every running skin in a group, for !RefreshGroup and others
+    Nowhere,        // a group bang without its group: Rainmeter reports it and runs nothing
 }
 
 // How many arguments each bang takes. One more is the config to run it on, and
@@ -63,9 +65,33 @@ fn arg_count(bang: &str) -> Option<usize> {
     }
 }
 
+// the plain bang a skin group bang runs on each member, like "refresh" for !RefreshGroup
+fn group_base(bang: &str) -> Option<&str> {
+    let base = bang.strip_suffix("group")?;
+    match base {
+        "refresh" | "update" | "redraw" | "zpos" | "clickthrough" | "draggable"| "snapedges"
+        | "keeponscreen" | "setvariable" => Some(base),
+        _ => None,
+    }
+}
+
 pub fn target(cmd: &str) -> Target {
     let Some((name, args)) = parse_bang(cmd) else { return Target::This };
-    let Some(count) = arg_count(&name.to_ascii_lowercase()) else { return Target::This };
+    let lower = name.to_ascii_lowercase();
+    /*  !RefreshGroup and the other: the group comes after the plain bang's arguments.
+        An empty one means every skin, as in Rainmeter. */
+    if let Some(base) = group_base(&lower) {
+        let count = arg_count(base).unwrap_or(0);
+        return match args.get(count).map(String::as_str) {
+            None => {
+                eprintln!("!{name}: Incorrect number of arguments");
+                Target::Nowhere
+            }
+            Some("") => Target::All,
+            Some(group) => Target::Group(group.to_string()),
+        };
+    }
+    let Some(count) = arg_count(&lower) else { return Target::This };
     match args.get(count).map(String::as_str) {
         None => Target::This,
         Some("" | "*") => Target::All,
@@ -82,6 +108,8 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
     };
     // Bang names ignore case: !hidemeter works as well as !HideMeter
     let lower = name.to_ascii_lowercase();
+    // A group bang runs as the plain bang: !RefreshGroup refreshes each skin it's sent to
+    let lower = group_base(&lower).unwrap_or(&lower).to_string();
     match lower.as_str() {
         "showmeter" | "hidemeter" | "togglemeter" => {
             let Some(meter_name) = args.first() else {
@@ -373,6 +401,20 @@ mod tests {
         // !Move takes two
         assert_eq!(target("!Move 10 20"), Target::This);
         assert_eq!(target("!Move 10 20 Other"), config("Other"));
+    }
+
+    #[test]
+    fn group_targets() {
+        let group = |g: &str| Target::Group(g.to_string());
+        assert_eq!(target("!RefreshGroup Clocks"), group("Clocks"));
+        assert_eq!(target(r#"!RedrawGroup "A | B""#), group("A | B"));
+        assert_eq!(target("!ZposGroup 1 Clocks"), group("Clocks"));
+        assert_eq!(target("!setVariableGroup N 1 Clocks"), group("Clocks"));
+        assert_eq!(target(r#"!UpdateGroup """#), Target::All);
+        assert_eq!(target("!RefreshGroup"), Target::Nowhere);
+        assert_eq!(target("!DraggableGroup 0"), Target::Nowhere);
+        // Not a skin group bang: !ShowMeterGroup work on meters (a later item)
+        assert_eq!(target("!ShowMeterGroup Clocks"), Target::This);
     }
 
     #[test]

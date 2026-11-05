@@ -6,6 +6,7 @@ mod cpu;
 mod dollarvar;
 mod fonts;
 mod formula;
+mod group;
 mod ini;
 mod manager;
 mod measure;

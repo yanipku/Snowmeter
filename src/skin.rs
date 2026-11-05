@@ -1,3 +1,4 @@
+use crate::group::Groups;
 use crate::ini;
 use crate::measure::{number_option, Measure, Ranged, Switch};
 use crate::meter::{self, Layout, Meter};
@@ -105,6 +106,7 @@ pub struct Skin {
     pub skins_root: PathBuf,                // what load() needs to read the skin again for !Refresh
     pub settings_dir: PathBuf,
     pub config: String,                     // the config name, like illustro\Clock (#CURRENTCONFIG#)
+    pub groups: Groups,                      // Group= of [Rainmeter]; the manager adds the settins file's
 }
 
 impl Skin {
@@ -431,6 +433,8 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         .map_or(0, |n| n as i32)
     };
     let fixed_size = (int("skinwidth"), int("skinheight"));
+    // Group=A|B: the skin's groups, gor bangs like !RefreshGroup
+    let groups = Groups::read_group(&get("group").unwrap_or_default());
     // Left,Top,Right,Bottom: whole numbers, formulas allowed; missing = 0
     // (DragMargins, BackgroundMargins: both use Rainmeter's ReadRECT)
     let rect = |key: &str| {
@@ -525,6 +529,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         skins_root: skins_root.to_path_buf(),
         settings_dir: settings_dir.to_path_buf(),
         config,
+        groups,
     })
 }
 

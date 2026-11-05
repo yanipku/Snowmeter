@@ -287,6 +287,7 @@ pub struct SkinSettings {
     pub click_through: bool, // ClickThrough=, default 0
     pub keep_on_screen: bool, // KeepOnScreen=, default 1
     pub snap_edges: bool,    // SnapEdges=, default 1
+    pub group: String,       // Group=: the config's groups (the skin file can add more)
 }
 
 // Reads a config's window settings, reading the file once. Missing ones get
@@ -313,6 +314,7 @@ pub fn read_skin_settings(cfg: &Config, config: &str) -> SkinSettings {
         click_through: get_bool("clickthrough", false),
         keep_on_screen: get_bool("keeponscreen", true),
         snap_edges: get_bool("snapedges", true),
+        group: get("group").unwrap_or_default(),
     }
 }
 

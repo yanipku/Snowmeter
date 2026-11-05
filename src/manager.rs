@@ -60,13 +60,14 @@ impl Manager {
 
     // Shows an already loaded skin in a new window, closing any other skin of its config.
     // `self: &Rc<Self>` lets the method hand the window a pointer back to the manager.
-    pub fn add(self: &Rc<Self>, skin: Skin) {
+    pub fn add(self: &Rc<Self>, mut skin: Skin) {
         let key = config_key(&skin.config);
         // Active=N, N counting from 1. A skin opened from outside the skins folder isn't
         // in the list, so nothing is saved for it.
         let name = skin.file.file_name().map(|n| n.to_string_lossy().to_lowercase());
         let files = config::config_files(&self.skins_root, &skin.config);
         let settings = config::read_skin_settings(&self.cfg, &skin.config);
+        skin.groups.add(&settings.group);
         if let Some(i) = files.iter().position(|f| Some(f.to_lowercase()) == name) {
             self.save_active(&skin.config, i + 1);
             // and, like Rainmeter, write any window setting the file doesn't have yet
@@ -196,7 +197,15 @@ impl Manager {
 
     // Every running skin. A copy of the list, so the map isn't borrowed while bangs run.
     fn all(&self) -> Vec<Rc<SkinWindow>> {
-        self.skins.borrow().values().cloned().collect()
+        let skins = self.skins.borrow();
+        let mut keys: Vec<&String> = skins.keys().collect();
+        keys.sort();
+        keys.into_iter().map(|k| skins[k].clone()).collect()
+    }
+
+    // the running skins in a group (the skin's Group= or the settings file's), in the same order
+    fn in_group(&self, group: &str) -> Vec<Rc<SkinWindow>> {
+        self.all().into_iter().filter(|sw| sw.skin.borrow().groups.matches(group)).collect()
     }
 }
 
@@ -681,13 +690,17 @@ impl SkinWindow {
             (s.file.clone(), s.skins_root.clone(), s.settings_dir.clone())
         };
         let info = self.info();
-        let fresh = match crate::dollarvar::with_skin(info, || skin::load(&file, &root, &settings)) {
+        let mut fresh = match crate::dollarvar::with_skin(info, || skin::load(&file, &root, &settings)) {
             Ok(fresh) => fresh,
             Err(e) => {
                 eprintln!("!Refresh: {e}");
                 return;
             }
         };
+        // the setting file's Group= joins the skin's own, as in Rainmeter
+        if let Some(manager) = self.manager.upgrade() {
+            fresh.groups.add(&config::read_skin_settings(&manager.cfg, &fresh.config).group);
+        }
         let (w, h) = (fresh.width, fresh.height);
         *self.skin.borrow_mut() = fresh; // the old skin is dropped here
         self.area.set_content_width(w);
@@ -727,6 +740,8 @@ impl SkinWindow {
             let targets = match action::target(command) {
                 Target::This => vec![me.clone()],
                 Target::All => manager.all(),
+                Target::Group(group) => manager.in_group(&group),
+                Target::Nowhere => Vec::new(),
                 Target::Config(config) => match manager.find(&config) {
                     Some(other) => vec![other],
                     None => {
