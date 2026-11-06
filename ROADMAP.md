@@ -15,7 +15,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 72 / 156 ≈ **46%**
+- Roadmap checklist: 73 / 156 ≈ **47%**
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
   - X11: 4 / 7 ≈ **57%**
@@ -26,23 +26,23 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 1. [ ] Remember each skin's position and settings (our own Rainmeter.ini; Wayland limits window placement)
 2. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
 3. [ ] `[Rainmeter]` `Blur` / `BlurRegion`
-4. [ ] Scroll actions (`MouseScrollUpAction`, …)
-5. [ ] Tooltips (`ToolTipText`, `ToolTipTitle`, …)
-6. [ ] Right-click menu (`ContextTitle` / `ContextAction`, and `!SetOption Rainmeter Context…`)
-7. [ ] Bang `!WriteKeyValue`
-8. [ ] Bangs `!UpdateMeter` / `!UpdateMeasure`
-9. [ ] Bang `!CommandMeasure`
-10. [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction`
-11. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
-12. [ ] `IfMatch` actions
-13. [ ] `OnChangeAction`
-14. [ ] Measure option `InvertMeasure`
-15. [ ] Measure option `UpdateDivider`
-16. [ ] `[Rainmeter]` `DefaultUpdateDivider` (measures first; meters once meter `UpdateDivider` is done)
-17. [ ] Measure options `Substitute` / `RegExpSubstitute`
-18. [ ] Measure option `AverageSize`
-19. [ ] Measure option `Group` (shared helper `group.rs` already exists)
-20. [ ] Bangs `!EnableMeasureGroup`, `!DisableMeasureGroup`, `!ToggleMeasureGroup`, `!PauseMeasureGroup`, `!UnpauseMeasureGroup`, `!TogglePauseMeasureGroup` (needs measure `Group`)
+4. [ ] Tooltips (`ToolTipText`, `ToolTipTitle`, …)
+5. [ ] Right-click menu (`ContextTitle` / `ContextAction`, and `!SetOption Rainmeter Context…`)
+6. [ ] Bang `!WriteKeyValue`
+7. [ ] Bangs `!UpdateMeter` / `!UpdateMeasure`
+8. [ ] Bang `!CommandMeasure`
+9. [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction`
+10. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
+11. [ ] `IfMatch` actions
+12. [ ] `OnChangeAction`
+13. [ ] Measure option `InvertMeasure`
+14. [ ] Measure option `UpdateDivider`
+15. [ ] `[Rainmeter]` `DefaultUpdateDivider` (measures first; meters once meter `UpdateDivider` is done)
+16. [ ] Measure options `Substitute` / `RegExpSubstitute`
+17. [ ] Measure option `AverageSize`
+18. [ ] Measure option `Group` (shared helper `group.rs` already exists)
+19. [ ] Bangs `!EnableMeasureGroup`, `!DisableMeasureGroup`, `!ToggleMeasureGroup`, `!PauseMeasureGroup`, `!UnpauseMeasureGroup`, `!TogglePauseMeasureGroup` (needs measure `Group`)
+20. [ ] Meter option `AntiAlias`
 ---
 
 ## Skin files and variables
@@ -131,7 +131,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 ## Interaction
 - [x] Mouse actions: `LeftMouseUp/Down/DoubleClickAction` (and the Right/Middle versions)
 - [x] `MouseOverAction` / `MouseLeaveAction` (every meter under the mouse gets its over-action, not just the top one; leaves run before overs; a hidden meter counts as left. Differences from Windows: the whole window rectangle counts as the skin, with no transparent-pixel test; a `ClickThrough` skin gets no hover; Button meter focus waits for the Button meter)
-- [ ] Scroll actions (`MouseScrollUpAction`, …)
+- [x] Scroll actions (`MouseScrollUpAction`, `MouseScrollDownAction`, `MouseScrollLeftAction`, `MouseScrollRightAction`; one action per wheel step, chosen like a click: top meter under the mouse, else `[Rainmeter]`; touchpad moves are added up into steps. Up/down tested; left/right and touchpad untested (no hardware). A `ClickThrough` skin gets no scrolls)
 - [ ] `ToolTipText`, `ToolTipTitle`, `ToolTipIcon`, `ToolTipWidth`, `ToolTipType`, `ToolTipHidden`
 - [x] Bangs: `!SetVariable` (formula values; `[#Var]` in actions is read at click time)
 - [ ] Bangs: `!WriteKeyValue`

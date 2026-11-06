@@ -263,6 +263,8 @@ struct SkinWindow {
     in_refresh_action: Cell<bool>,
     // Counts refreshes, so the mouse_move loop can stop when an action refreshed the skin
     refreshes: Cell<u32>,
+    // Where the mouse is in the window (None = outside), for scroll events, which carry on position
+    pointer: Cell<Option<(f64, f64)>>,
     // The short wait after a move before saving the position (see position_changed)
     save_timer: RefCell<Option<glib::SourceId>>,
     // The position last saved or loaded, so a resize alone doesn't write the file
@@ -323,6 +325,7 @@ impl SkinWindow {
                 in_update_action: Cell::new(false),
                 in_refresh_action: Cell::new(false),
                 refreshes: Cell::new(0),
+                pointer: Cell::new(None),
                 save_timer: RefCell::new(None),
                 saved_position: Cell::new(Some(position)),
             }
@@ -452,6 +455,24 @@ impl SkinWindow {
             }
         });
         window.add_controller(motion);
+
+        /*  MouseScrollUpAction and the other three. DISCRETE makes GTK add up a touchpad's
+            small moves into whole steps, like a wheel's notches, so each step runs one 
+            action, as each WM_MOUSEWHEEL does in Rainmeter. A scroll event has no position,
+            so we use the last one the motion controller saw. */
+        let scroll = gtk4::EventControllerScroll::new(
+            gtk4::EventControllerScrollFlags::BOTH_AXES | gtk4::EventControllerScrollFlags::DISCRETE,
+        );
+        let scroll_me = Rc::downgrade(&sw);
+        scroll.connect_scroll(move |_, dx, dy| {
+            if let Some(sw) = scroll_me.upgrade() {
+                if let (Some((x,y)), Some(event)) = (sw.pointer.get(), MouseEvent::from_scroll(dx, dy)) {
+                    sw.mouse_action(x, y, &[event]);
+                }
+            }
+            glib::Propagation::Stop
+        });
+        window.add_controller(scroll);
 
         // Put the window in place: with the layer shell on Wayland, else by asking the X server
         if !crate::wlpos::setup(&window, position, settings.z) {
@@ -774,6 +795,7 @@ impl SkinWindow {
         let start = self.refreshes.get();
         for step in [MouseEvent::Leave, MouseEvent::Over] {
             loop {
+                self.pointer.set(pos);  // remembered for scroll actions
                 // the borrow ends with this line, before the bangs change the skin
                 let Some((name, raw)) = self.skin.borrow_mut().next_move_action(pos, step) else { break };
                 // [#Var], [&Measure] and [$Skin...] are filled in now, as for clicks

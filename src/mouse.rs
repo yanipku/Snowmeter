@@ -17,10 +17,14 @@ pub enum MouseEvent {
     MiddleDoubleClick,
     Over,               //MouseOverAction: the mouse comes onto the meter or skin
     Leave,              //MouseLeaveAction: the mouse goes off it
+    ScrollUp,           //MouseScrollUpAction: one step of the wheel away from you
+    ScrollDown,         //MouseScrollDownAction: one step towards you
+    ScrollLeft,         //MouseScrollLeftAction: tilt wheel or touchpad, sideways
+    ScrollRight,        //MouseScrollRightAction
 }
 
 impl MouseEvent {
-    pub const ALL: [MouseEvent; 11] = [
+    pub const ALL: [MouseEvent; 15] = [
         MouseEvent::LeftUp,
         MouseEvent::LeftDown,
         MouseEvent::LeftDoubleClick,
@@ -32,6 +36,10 @@ impl MouseEvent {
         MouseEvent::MiddleDoubleClick,
         MouseEvent::Over,
         MouseEvent::Leave,
+        MouseEvent::ScrollUp,
+        MouseEvent::ScrollDown,
+        MouseEvent::ScrollLeft,
+        MouseEvent::ScrollRight,
     ];
 
     // The event for a GTK button number (1 left, 2 middle, 3 right) and kind of press.
@@ -52,6 +60,23 @@ impl MouseEvent {
         })
     }
 
+    /*  The event for one Scroll step. GTK gives dy < 0 for up and dx < 0 for left (the
+        opposite sign to Windows' wheel delta). Up/down wins if one step moves both ways.
+        None if nothing moved. */
+    pub fn from_scroll(dx: f64, dy: f64) -> Option<MouseEvent> {
+        if dy < 0.0 {
+            Some(MouseEvent::ScrollUp)
+        } else if dy > 0.0 {
+            Some(MouseEvent::ScrollDown)
+        } else if dx < 0.0 {
+            Some(MouseEvent::ScrollLeft)
+        } else if dx > 0.0 {
+            Some(MouseEvent::ScrollRight)
+        } else {
+            None
+        }
+    }
+
     // The skin option for this event, in lowercase like every option key
     pub fn option(self) -> &'static str {
         match self {
@@ -66,6 +91,10 @@ impl MouseEvent {
             MouseEvent::MiddleDoubleClick => "middlemousedoubleclickaction",
             MouseEvent::Over => "mouseoveraction",
             MouseEvent::Leave => "mouseleaveaction",
+            MouseEvent::ScrollUp => "mousescrollupaction",
+            MouseEvent::ScrollDown => "mousescrolldownaction",
+            MouseEvent::ScrollLeft => "mousescrollleftaction",
+            MouseEvent::ScrollRight => "mousescrollrightaction",
         }
     }
 }
@@ -134,5 +163,15 @@ mod tests {
         assert_eq!(MouseEvent::from_button(1, Press::Up), Some(MouseEvent::LeftUp));
         assert_eq!(MouseEvent::from_button(3, Press::DoubleClick), Some(MouseEvent::RightDoubleClick));
         assert_eq!(MouseEvent::from_button(8, Press::Down), None, "side buttons aren't supported yet");
+    }
+
+    #[test]
+    fn gtk_scroll_events() {
+        assert_eq!(MouseEvent::from_scroll(0.0, -1.0), Some(MouseEvent::ScrollUp));
+        assert_eq!(MouseEvent::from_scroll(0.0, 1.0), Some(MouseEvent::ScrollDown));
+        assert_eq!(MouseEvent::from_scroll(-1.0, 0.0), Some(MouseEvent::ScrollLeft));
+        assert_eq!(MouseEvent::from_scroll(1.0, 0.0), Some(MouseEvent::ScrollRight));
+        assert_eq!(MouseEvent::from_scroll(1.0, -1.0), Some(MouseEvent::ScrollUp));
+        assert_eq!(MouseEvent::from_scroll(0.0, 0.0), None);
     }
 }
