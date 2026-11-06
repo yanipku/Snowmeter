@@ -208,7 +208,7 @@ impl Manager {
                 }
             }
             ConfigBang::DeactivateGroup { group } => {
-                // "" is every skin, as Rainmeter's GetSkinByLoadOrder
+                // "" is every skin, as Rainmeter's GetSkinsByLoadOrder
                 let members = if group.is_empty() { self.all() } else {self.in_group(&group) };
                 for sw in members {
                     let config = sw.skin.borrow().config.clone();
@@ -261,6 +261,8 @@ struct SkinWindow {
     // doesn't start itself again forever
     in_update_action: Cell<bool>,
     in_refresh_action: Cell<bool>,
+    // Counts refreshes, so the mouse_move loop can stop when an action refreshed the skin
+    refreshes: Cell<u32>,
     // The short wait after a move before saving the position (see position_changed)
     save_timer: RefCell<Option<glib::SourceId>>,
     // The position last saved or loaded, so a resize alone doesn't write the file
@@ -320,6 +322,7 @@ impl SkinWindow {
                 press_ran_action: Cell::new(false),
                 in_update_action: Cell::new(false),
                 in_refresh_action: Cell::new(false),
+                refreshes: Cell::new(0),
                 save_timer: RefCell::new(None),
                 saved_position: Cell::new(Some(position)),
             }
@@ -425,6 +428,30 @@ impl SkinWindow {
             }
         });
         window.add_controller(click);
+
+        /*  MouseOverAction / MouseLeaveAction. GTK tells us when the mouse comes onto the 
+            window (enter), moves orver it (motion) and goes off it (leave). with ClickThrough
+            there's no input region, so none of there arrive: no hover (unlike Wondows + Ctrl). */
+        let motion = gtk4::EventControllerMotion::new();
+        let enter_me = Rc::downgrade(&sw);
+        motion.connect_enter(move |_, x, y| {
+            if let Some(sw) = enter_me.upgrade() {
+                sw.move_actions(Some((x, y)));
+            }
+        });
+        let motion_me = Rc::downgrade(&sw);
+        motion.connect_motion(move |_, x, y| {
+            if let Some(sw) = motion_me.upgrade() {
+                sw.move_actions(Some((x, y)));
+            }
+        });
+        let leave_me = Rc::downgrade(&sw);
+        motion.connect_leave(move |_| {
+            if let Some(sw) = leave_me.upgrade() {
+                sw.move_actions(None);
+            }
+        });
+        window.add_controller(motion);
 
         // Put the window in place: with the layer shell on Wayland, else by asking the X server
         if !crate::wlpos::setup(&window, position, settings.z) {
@@ -730,6 +757,7 @@ impl SkinWindow {
         }
         let (w, h) = (fresh.width, fresh.height);
         *self.skin.borrow_mut() = fresh; // the old skin is dropped here
+        self.refreshes.set(self.refreshes.get().wrapping_add(1));
         self.area.set_content_width(w);
         self.area.set_content_height(h);
         self.area.queue_draw();
@@ -737,6 +765,33 @@ impl SkinWindow {
         // OnRefreshAction: the skin is loaded again and its timer runs
         let action = self.skin.borrow().on_refresh.clone();
         self.run_skin_action("Rainmeter", action, &self.in_refresh_action);
+    }
+
+    /*  MouseOverAction / MouseLeaveAction after the mouse moved to 'pos' in the window (None = 
+        it left the window). As in Rainmeter's OnMouseMove, every leave runs first, then every
+        over, one action at a time, checking again after each one. */
+    fn move_actions(&self, pos: Option<(f64, f64)>) {
+        let start = self.refreshes.get();
+        for step in [MouseEvent::Leave, MouseEvent::Over] {
+            loop {
+                // the borrow ends with this line, before the bangs change the skin
+                let Some((name, raw)) = self.skin.borrow_mut().next_move_action(pos, step) else { break };
+                // [#Var], [&Measure] and [$Skin...] are filled in now, as for clicks
+                let info = self.info();
+                let text = {
+                    let s = self.skin.borrow();
+                    crate::dollarvar::with_skin(info, || s.expand_action(&name, &raw))
+                };
+                println!("{step:?} on {name}: {text}");
+                self.run_action(&text);
+                /*  An action that refreshed the skin starts it again with every flag off: stop
+                    here, or MouseOverAction=[!Refresh] would run forever. the next mouse move
+                    carries on, as after Rainmeter's delayed refresh. */
+                if self.refreshes.get() != start {
+                    return;
+                }
+            }
+        }
     }
 
     // Runs the action of the first of `events` that anything at (x, y) has an action for

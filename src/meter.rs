@@ -613,6 +613,7 @@ pub struct Meter {
     mouse: MouseActions,            // LeftMouseUpAction and the like
     on_update: String,              // OnUpdateAction, #var# filled in (runs even when hidden)
     accurate_text: bool,            // [Rainmeter] AccurateText; false = GDI+ spacing (the default)
+    mouse_over: bool,               // the mouse is over this meter (only tracked with MouseOver/LeaveAction)
 }
 
 impl Meter {
@@ -874,6 +875,8 @@ impl Meter {
                 .unwrap_or_default(),
             // A skin-wide setting: a rebuilt meter keeps it
             accurate_text: prev.is_some_and(|p| p.accurate_text),
+            // A DynamicVariables rebuild must not look like the mouse just arrived
+            mouse_over: prev.is_some_and(|p| p.mouse_over),
         })
     }
 
@@ -1285,6 +1288,67 @@ pub fn action_at<'a>(
         .or_else(|| skin_mouse.get(event).map(|a| ("Rainmeter", a)))
 }
 
+/*  One step of Rainmeter's mouse-move handling (Skin::DoMoveAction). 'step' is Over or
+    leave; 'ps' is the mouse in the window, None once it has left the window. Finds the 
+    first meter (or the skin) whose "mouse is over me" flag must change, flips it, and
+    return its action with the section name. A flag that flips with no action to run is 
+    passed over. None = nothing (more) to run. Call it again after running each action,
+    since the action may have shown, hidden or moved meters. */
+    pub fn next_move_action(
+        meters: &mut [Meter],
+        skin_mouse: &MouseActions,
+        skin_over: &mut bool,
+        measures: &[Box<dyn Measure>],
+        pos: Option<(f64, f64)>,
+        step: MouseEvent,
+    ) -> Option<(String, String)> {
+        let hit = |m: &Meter| pos.is_some_and(|(x, y)| m.hit(x, y, measures));
+        // the section name and action text, copied so the caller can change the skin
+        let found = |name: &str, a: &str| Some((name.to_string(), a.to_string()));
+        match step {
+            MouseEvent::Over => {
+                //The mouse is over the window before is over any meter
+                if pos.is_some() && !*skin_over {
+                    *skin_over = true;
+                    if let Some(a) = skin_mouse.get(MouseEvent::Over) {
+                        return found("Rainmeter", a);
+                    }
+                }
+                //Every meter under the mouse, top one first (not just the top one, as for clicks)
+                for m in meters.iter_mut().rev() {
+                    let tracked = m.mouse.get(MouseEvent::Over).is_some() || m.mouse.get(MouseEvent::Leave).is_some();
+                    if m.mouse_over || !tracked || !hit(m) {
+                        continue;
+                    }
+                    m.mouse_over = true;
+                    if let Some(a) = m.mouse.get(MouseEvent::Over) {
+                        return found(&m.name, a);
+                    }
+                }
+            }
+            MouseEvent::Leave => {
+                //Meters first, then the window. A hidden meter counts as left (hit() says no).
+                for m in meters.iter_mut().rev() {
+                    if !m.mouse_over || hit(m) {
+                        continue;
+                    }
+                    m.mouse_over = false;
+                    if let Some(a) = m.mouse.get(MouseEvent::Leave) {
+                        return found(&m.name, a);
+                    }
+                }
+                if pos.is_none() && *skin_over {
+                    *skin_over = false;
+                    if let Some(a) = skin_mouse.get(MouseEvent::Leave) {
+                        return found("Rainmeter", a);
+                    }
+                }
+            }
+            _ => {} // clicks aren't move actions
+        }
+        None
+    }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1308,6 +1372,7 @@ mod tests {
             mouse: MouseActions::default(),
             on_update: String::new(),
             accurate_text: false,
+            mouse_over: false,
         }
     }
 
@@ -1352,6 +1417,60 @@ mod tests {
         let named = |x, y| action_at(&meters, &skin, &measures, x, y, MouseEvent::LeftUp).map(|(n, _)| n);
         assert_eq!(named(10.0, 10.0), Some("Over"));
         assert_eq!(named(150.0, 150.0), Some("Rainmeter"));
+    }
+
+    // A meter with the given MouseOverAction / MouseLeaveAction ("" = none)
+    fn on_hover(over: &str, leave: &str) -> MouseActions {
+        let mut options = HashMap::new();
+        options.insert("mouseoveraction".to_string(), over.to_string());
+        options.insert("mouseleaveaction".to_string(), leave.to_string());
+        MouseActions::read(&Section { name: "T".to_string(), options }, &HashMap::new())
+    }
+
+    // Every action one mouse move runs, in order: the leaves, then the overs, as the manager does
+    fn hover(meters: &mut [Meter], skin: &MouseActions, skin_over: &mut bool, pos: Option<(f64, f64)>) -> Vec<String> {
+        let measures : Vec<Box<dyn Measure>> = Vec::new();
+        let mut ran = Vec::new();
+        for step in [MouseEvent::Leave, MouseEvent::Over] {
+            while let Some((_, a)) = next_move_action(meters, skin, skin_over, &measures, pos, step) {
+                ran.push(a);
+            }
+        }
+        ran
+    }
+
+    #[test]
+    fn hover_actions_follow_the_mouse() {
+        let measures: Vec<Box<dyn Measure>> = Vec::new();
+        let abs = Pos::Abs(0.0);
+        let mut big = bar("Big", abs, abs, 100.0, 100.0);
+        big.mouse = on_hover("[!BigOver]", "[!BigLeave]");
+        let mut small = bar("Small", abs, abs, 50.0, 50.0); // drawn on top of Big
+        small.mouse = on_hover("[!SmallOver]", "");
+        let mut meters = vec![big, small];
+        let mut layout = Layout::new();
+        for m in &mut meters {
+            layout.place(m, &measures);
+        }
+        let skin = on_hover("[!SkinOver]", "[!SkinLeave]");
+        let mut skin_over = false;
+        let mut at = |meters: &mut Vec<Meter>, pos: Option<(f64, f64)>| hover(meters, &skin, &mut skin_over, pos);
+
+        // Tnto the window, onto both meters: the skin first, then the meters from the top one down
+        assert_eq!(at(&mut meters, Some((10.0, 10.0))), ["[!SkinOver]", "[!SmallOver]", "[!BigOver]"]);
+        // moving on over the same meter run nothing
+        assert!(at(&mut meters, Some((20.0, 20.0))).is_empty());
+        // off Small (no leave action), still on Big: nothing
+        assert!(at(&mut meters, Some((70.0, 70.0))).is_empty());
+        // back onto Small
+        assert_eq!(at(&mut meters, Some((10.0, 10.0))), ["[!SmallOver]"]);
+        // Hiding Big count as leaving it; showing it again counts as coming back
+        meters[0].hidden = true;
+        assert_eq!(at(&mut meters, Some((10.0, 10.0))), ["[!BigLeave]"]);
+        meters[0].hidden = false;
+        assert_eq!(at(&mut meters, Some((10.0, 10.0))), ["[!BigOver]"]);
+        // out of the window: the meters leave first, then the skin
+        assert_eq!(at(&mut meters, None), ["[!BigLeave]", "[!SkinLeave]"]);
     }
 
     fn rel(offset: f64, far: bool) -> Pos {

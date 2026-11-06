@@ -15,10 +15,12 @@ pub enum MouseEvent {
     MiddleUp,
     MiddleDown,
     MiddleDoubleClick,
+    Over,               //MouseOverAction: the mouse comes onto the meter or skin
+    Leave,              //MouseLeaveAction: the mouse goes off it
 }
 
 impl MouseEvent {
-    pub const ALL: [MouseEvent; 9] = [
+    pub const ALL: [MouseEvent; 11] = [
         MouseEvent::LeftUp,
         MouseEvent::LeftDown,
         MouseEvent::LeftDoubleClick,
@@ -28,6 +30,8 @@ impl MouseEvent {
         MouseEvent::MiddleUp,
         MouseEvent::MiddleDown,
         MouseEvent::MiddleDoubleClick,
+        MouseEvent::Over,
+        MouseEvent::Leave,
     ];
 
     // The event for a GTK button number (1 left, 2 middle, 3 right) and kind of press.
@@ -60,6 +64,8 @@ impl MouseEvent {
             MouseEvent::MiddleUp => "middlemouseupaction",
             MouseEvent::MiddleDown => "middlemousedownaction",
             MouseEvent::MiddleDoubleClick => "middlemousedoubleclickaction",
+            MouseEvent::Over => "mouseoveraction",
+            MouseEvent::Leave => "mouseleaveaction",
         }
     }
 }

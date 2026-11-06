@@ -95,8 +95,8 @@ pub struct Skin {
     pub drag_margins: [i32; 4],             // DragMargins=Left,Top,Right,Bottom (all 0 = drag anywhere)
     pub background_margins: [i32; 4],       // BackgroundMArgins=Left,Top,Right,Bottom: space around the meters
     pub mouse: MouseActions,                // mouse actions of [Rainmeter], for clicks no meter takes
-                                            // OnRefreshAction, OnUpdateAction and OnCloseAction of [Rainmeter] (none = not set)
-    pub on_refresh: Option<String>,
+    pub mouse_over: bool,                   // the mouse is over the skin's window
+    pub on_refresh: Option<String>,         // OnRefreshAction, OnUpdateAction and OnCloseAction of [Rainmeter] (none = not set)
     pub on_update: Option<String>,
     pub on_close: Option<String>,
     pub on_focus: Option<String>,
@@ -114,6 +114,12 @@ impl Skin {
     // with the name of the section it belongs to
     pub fn action_at(&self, x: f64, y: f64, event: MouseEvent) -> Option<(&str, &str)> {
         meter::action_at(&self.meters, &self.mouse, &self.measures, x, y, event)
+    }
+
+    /*  The next MousrOverAction / MouseLeaveAction to run after the mouse move to 'pos'
+        (None = it left the window), with its section name. See meter::next_move_action. */
+    pub fn next_move_action(&mut self, pos: Option<(f64, f64)>, step: MouseEvent) -> Option<(String, String)> {
+        meter::next_move_action(&mut self.meters, &mut self.mouse, &mut self.mouse_over, &self.measures, pos, step)
     }
 
     // Fills in [#Var] and [&Measure] in an action just before it runs, so it sees the latest
@@ -519,6 +525,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         drag_margins,
         background_margins,
         mouse,
+        mouse_over: false,
         on_refresh,
         on_update,
         on_close,

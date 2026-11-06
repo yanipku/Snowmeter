@@ -15,7 +15,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 71 / 156 ≈ **46%**
+- Roadmap checklist: 72 / 156 ≈ **46%**
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
   - X11: 4 / 7 ≈ **57%**
@@ -26,9 +26,9 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 1. [ ] Remember each skin's position and settings (our own Rainmeter.ini; Wayland limits window placement)
 2. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
 3. [ ] `[Rainmeter]` `Blur` / `BlurRegion`
-4. [ ] `MouseOverAction` / `MouseLeaveAction`
-5. [ ] Scroll actions (`MouseScrollUpAction`, …)
-6. [ ] Tooltips (`ToolTipText`, `ToolTipTitle`, …)
+4. [ ] Scroll actions (`MouseScrollUpAction`, …)
+5. [ ] Tooltips (`ToolTipText`, `ToolTipTitle`, …)
+6. [ ] Right-click menu (`ContextTitle` / `ContextAction`, and `!SetOption Rainmeter Context…`)
 7. [ ] Bang `!WriteKeyValue`
 8. [ ] Bangs `!UpdateMeter` / `!UpdateMeasure`
 9. [ ] Bang `!CommandMeasure`
@@ -130,7 +130,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 
 ## Interaction
 - [x] Mouse actions: `LeftMouseUp/Down/DoubleClickAction` (and the Right/Middle versions)
-- [ ] `MouseOverAction` / `MouseLeaveAction`
+- [x] `MouseOverAction` / `MouseLeaveAction` (every meter under the mouse gets its over-action, not just the top one; leaves run before overs; a hidden meter counts as left. Differences from Windows: the whole window rectangle counts as the skin, with no transparent-pixel test; a `ClickThrough` skin gets no hover; Button meter focus waits for the Button meter)
 - [ ] Scroll actions (`MouseScrollUpAction`, …)
 - [ ] `ToolTipText`, `ToolTipTitle`, `ToolTipIcon`, `ToolTipWidth`, `ToolTipType`, `ToolTipHidden`
 - [x] Bangs: `!SetVariable` (formula values; `[#Var]` in actions is read at click time)
