@@ -156,6 +156,24 @@ impl Manager {
         }
     }
 
+    /*  Quitting (Ctrl + C, SIGTERM, ...): closes every skin, then ends the program. As in 
+        Rainmeter's DeleteAllSkins, each skin leaves the list just before it closes, so its
+        OnCloseAction can still reach the others. Active= is kept, so the same skins come
+        back next time. */
+    pub fn quit(&self) {
+        loop {
+            // The first config by name; the borrow ends with this line
+            let first = self.skins.borrow().keys().min().cloned();
+            let Some(key) = first else { break };
+            let removed = self.skins.borrow_mut().remove(&key);
+            if let Some(sw) = removed {
+                sw.close();
+            }
+        }
+        // quit() ignores app.hold(), so config bangs from an OnCloseAction don't run 
+        self.app.quit();
+    }
+
     // !ActivateConfig, !DeactivateConfig, !ToggleConfig. `this` is the config whose action ran.
     fn run_config_bang(self: &Rc<Self>, bang: ConfigBang, this: &str) {
         let result = match bang {
@@ -188,6 +206,15 @@ impl Manager {
                 } else {
                     Ok(()) // exists but isn't running: nothing to do, as in Rainmeter
                 }
+            }
+            ConfigBang::DeactivateGroup { group } => {
+                // "" is every skin, as Rainmeter's GetSkinByLoadOrder
+                let members = if group.is_empty() { self.all() } else {self.in_group(&group) };
+                for sw in members {
+                    let config = sw.skin.borrow().config.clone();
+                    self.deactivate(&config);
+                }
+                Ok(())
             }
         };
         if let Err(e) = result {

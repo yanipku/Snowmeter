@@ -32,12 +32,13 @@ pub fn flag(n: i32, now: bool) -> bool {
     if n == -1 { !now } else { n != 0 }
 }
 
-// !ActivateConfig, !DeactivateConfig, !ToggleConfig
+// !ActivateConfig, !DeactivateConfig, !ToggleConfig, !DeactivateConfigGroup
 #[derive(Debug, PartialEq)]
 pub enum ConfigBang {
     Activate { config: String, file: Option<String> },
     Deactivate { config: Option<String> }, // None: this skin; "*": every skin
     Toggle { config: String, file: Option<String> },
+    DeactivateGroup { group: String }, // "": every skin
 }
 
 // Which skin a bang runs on
@@ -200,6 +201,13 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
         }
         "deactivateconfig" => {
             After::Config(ConfigBang::Deactivate { config: args.first().cloned() })
+        }
+        "deactivateconfiggroup" => {
+            let Some(group) = args.first().cloned() else {
+                eprintln!("!{name}: Invalid parameters");
+                return After::Nothing;
+            };
+            After::Config(ConfigBang::DeactivateGroup { group })
         }
         "zpos" | "changezpos" | "draggable" | "clickthrough" | "keeponscreen" | "snapedges" => {
             // Rainmeter's ParseInt: a number or a (formula), the fraction dropped; else 0

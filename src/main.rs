@@ -180,6 +180,16 @@ fn main() -> glib::ExitCode {
         .application_id("org.example.snowmeter")
         .build();
     let manager = manager::Manager::new(&app, &root, &cfg);
+    /*  Ctrl+C (SIGINT), kill (SIGTERM) and closing the terminal (SIGHUP): all close the skins
+        properly, running their OnCloseAction. Glib runs this from the main loop, not
+        inside the signal itself, so it's safe to touch the skins. */
+    for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
+        let manager = manager.clone();
+        glib_unix::unix_signal_add_local_once(signal, move || {
+            println!("Signal {signal}: closing the skins");
+            manager.quit();
+        });
+    }
     // activate runs when the app starts. GTK wants a callback that may run more than
     // once, so the skins sit in a Cell and take() hands them over the first time only
     // (later calls get an empty list).

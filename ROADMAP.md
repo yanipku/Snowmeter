@@ -15,7 +15,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 69 / 156 ≈ **44%**
+- Roadmap checklist: 71 / 156 ≈ **46%**
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
   - X11: 4 / 7 ≈ **57%**
@@ -25,25 +25,24 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 ## Next up
 1. [ ] Remember each skin's position and settings (our own Rainmeter.ini; Wayland limits window placement)
 2. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
-3. [ ] `[Rainmeter]` `Group` (skin groups for the config bangs)
-4. [ ] `[Rainmeter]` `Blur` / `BlurRegion`
-5. [ ] Ctrl+C / SIGTERM runs `OnCloseAction` (signal handling)
-6. [ ] `MouseOverAction` / `MouseLeaveAction`
-7. [ ] Scroll actions (`MouseScrollUpAction`, …)
-8. [ ] Tooltips (`ToolTipText`, `ToolTipTitle`, …)
-9. [ ] Bang `!WriteKeyValue`
-10. [ ] Bangs `!UpdateMeter` / `!UpdateMeasure`
-11. [ ] Bang `!CommandMeasure`
-12. [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction`
-13. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
-14. [ ] `IfMatch` actions
-15. [ ] `OnChangeAction`
-16. [ ] Measure option `InvertMeasure`
-17. [ ] Measure option `UpdateDivider`
-18. [ ] `[Rainmeter]` `DefaultUpdateDivider` (measures first; meters once meter `UpdateDivider` is done)
-19. [ ] Measure options `Substitute` / `RegExpSubstitute`
-20. [ ] Measure option `AverageSize`
-
+3. [ ] `[Rainmeter]` `Blur` / `BlurRegion`
+4. [ ] `MouseOverAction` / `MouseLeaveAction`
+5. [ ] Scroll actions (`MouseScrollUpAction`, …)
+6. [ ] Tooltips (`ToolTipText`, `ToolTipTitle`, …)
+7. [ ] Bang `!WriteKeyValue`
+8. [ ] Bangs `!UpdateMeter` / `!UpdateMeasure`
+9. [ ] Bang `!CommandMeasure`
+10. [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction`
+11. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
+12. [ ] `IfMatch` actions
+13. [ ] `OnChangeAction`
+14. [ ] Measure option `InvertMeasure`
+15. [ ] Measure option `UpdateDivider`
+16. [ ] `[Rainmeter]` `DefaultUpdateDivider` (measures first; meters once meter `UpdateDivider` is done)
+17. [ ] Measure options `Substitute` / `RegExpSubstitute`
+18. [ ] Measure option `AverageSize`
+19. [ ] Measure option `Group` (shared helper `group.rs` already exists)
+20. [ ] Bangs `!EnableMeasureGroup`, `!DisableMeasureGroup`, `!ToggleMeasureGroup`, `!PauseMeasureGroup`, `!UnpauseMeasureGroup`, `!TogglePauseMeasureGroup` (needs measure `Group`)
 ---
 
 ## Skin files and variables
@@ -122,9 +121,9 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] `DragMargins` (negative left/top count from the far edge, as in Rainmeter)
 - [ ] `DefaultUpdateDivider`
 - [x] `OnRefreshAction`, `OnCloseAction`, `OnUpdateAction`, `OnFocusAction`/`OnUnfocusAction`
-- [ ] Ctrl+C / SIGTERM runs `OnCloseAction` (signal handling)
+- [x] Ctrl+C / SIGTERM runs `OnCloseAction` (also SIGHUP, when the terminal closes; through GLib's main loop with `glib-unix`; every skin closes as in Rainmeter's `DeleteAllSkins`, and `Active=` is kept for the next start)
 - [ ] `ContextTitle` / `ContextAction`
-- [ ] `Group`
+- [x] `Group` (from the skin and from the settings file; `A|B` any, `A&B` all; bangs `!RefreshGroup`, `!UpdateGroup`, `!RedrawGroup`, `!ZPosGroup`, `!ClickThroughGroup`, `!DraggableGroup`, `!SnapEdgesGroup`, `!KeepOnScreenGroup`, `!SetVariableGroup`, `!DeactivateConfigGroup`; an empty group means every skin, as in Rainmeter)
 - [x] `LocalFont`
 - [x] `AccurateText` (0, the default, adds GDI+'s spacing like Rainmeter: size/6 each side, size/72 per character, size/8 below; the per-character spacing is only measured, not drawn, until meter `AntiAlias` exists)
 - [ ] `Blur` / `BlurRegion` (X11: only some compositors, e.g. KWin's blur hint · Wayland (layer-shell): KDE has a blur protocol, others vary · GNOME: no)

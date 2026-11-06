@@ -13,3 +13,7 @@ gdk4-x11 = { version = "0.11.5", features = ["xlib"] }
 # Wayland only: window positions and layers, through the layer-shell protocol.
 # Needs the system library libgtk4-layer-shell (package libgtk4-layer-shell-dev to build).
 gtk4-layer-shell = "0.8.1"
+# Signal numbers (SIGINT, SIGTERM, SIGHUP) for quitting cleanly
+libc = "0.2"
+# Unix signals through Glib's main loop (moved out of glib in 0.22)
+glib-unix = "0.22.8"
