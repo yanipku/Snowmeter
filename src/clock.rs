@@ -151,6 +151,11 @@ impl Measure for TimeMeasure {
         self.text.clone()
     }
 
+    // Its text is the formatted date and time, not number
+    fn is_text(&self) -> bool {
+        true
+    }
+
     // Time keeps nothing between updates, so a fresh one is as good as the old one
     fn reread(&mut self, section: &Section, vars: &HashMap<String, String>) {
         *self = TimeMeasure::from_options(section, vars);

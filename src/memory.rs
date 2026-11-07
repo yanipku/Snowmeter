@@ -61,4 +61,9 @@ impl Measure for MemoryMeasure {
             self.total_kb as f64 / 1024.0
         )
     }
+
+    // Its text is "used / total MiB", not its number (a percentage)
+    fn is_text(&self) -> bool {
+        true
+    }
 }

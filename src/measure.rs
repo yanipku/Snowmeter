@@ -79,6 +79,12 @@ pub trait Measure {
         format!("{:.1}", self.value())
     }
 
+    /*  True when text() is words rather than the number written out (Rainmeter's
+        GetStringValue), like a Time measure's Format. InvertMeasure leaves those alone. */
+    fn is_text(&self) -> bool {
+        false
+    }
+
     // Rainmeter's timestamp (seconds since 1601), for [Measure:TimeStamp]. Only Time has one.
     fn timestamp(&self) -> Option<f64> {
         None
@@ -267,13 +273,14 @@ pub struct Ranged {
     // DynamicVariables=1: the option text is read again on every update
     min_src: Option<String>,
     max_src: Option<String>,
-    complained: bool, // so a bad value is reported once, not every update
+    complained: bool,           // so a bad value is reported once, not every update
+    invert: bool,               // InvertMeasure=1: value() is flipped inside the range
 }
 
 impl Ranged {
     // No MinValue/MaxValue yet: read_range() sets them
     pub fn wrap(inner: Box<dyn Measure>) -> Ranged {
-        Ranged { inner, min: None, max: None, min_src: None, max_src: None, complained: false }
+        Ranged { inner, min: None, max: None, min_src: None, max_src: None, complained: false, invert: false }
     }
 
     // Reads MinValue/MaxValue, at load and after !SetOption. A missing one (None) keeps
@@ -295,6 +302,7 @@ impl Ranged {
             self.max = number_option(section, "maxvalue", vars);
         }
         self.complained = false;
+        self.invert = number_option(section, "invertmeasure", vars).unwrap_or(0.0) != 0.0;
     }
 }
 
@@ -342,7 +350,14 @@ impl Measure for Ranged {
     }
 
     fn value(&self) -> f64 {
-        self.inner.value()
+        let v = self.inner.value();
+        if self.invert {
+            // As Rainmeter's Measure::GetValue: flipped inside the range
+            let (min, max) = self.range();
+            max - v + min
+        } else {
+            v
+        }
     }
 
     // Asked each time, so a measure with a moving range (Calc) keeps moving
@@ -352,7 +367,12 @@ impl Measure for Ranged {
     }
 
     fn text(&self) -> String {
-        self.inner.text()
+        // Inverted numbers are written out again; words (a time's Format) stay as they are
+        if self.invert && !self.inner.is_text() {
+            crate::calc::format_number(self.value())
+        } else {
+            self.inner.text()
+        }
     }
 
     fn timestamp(&self) -> Option<f64> {
@@ -468,5 +488,22 @@ mod tests {
         let mut off = Switch::new(Box::new(Count(0.0)), true, false);
         off.update();
         assert_eq!(off.value(), 0.0);
+    }
+
+    #[test]
+    fn invert_measure() {
+        let mut options = HashMap::new();
+        options.insert("invertmeasure".to_string(), "1".to_string());
+        options.insert("maxvalue".to_string(), "10".to_string());
+        let section = Section { name: "Count".to_string(), options };
+        let mut ranged = Ranged::wrap(Box::new(Count(0.0)));
+        ranged.read_range(&section, &HashMap::new());
+        ranged.update();
+        ranged.update();
+        ranged.update();
+        // 3 in 0..10 show as 10 -3 + 0
+        assert_eq!((ranged.value(), ranged.text()), (7.0, "7".to_string()));
+        // The range itself doesn't change, so a bar simply fills the other way round
+        assert_eq!(ranged.range(), (0.0, 10.0));
     }
 }

@@ -15,7 +15,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 73 / 156 ≈ **47%**
+- Roadmap checklist: 76 / 156 ≈ **49%**
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
   - X11: 4 / 7 ≈ **57%**
@@ -26,23 +26,23 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 1. [ ] Remember each skin's position and settings (our own Rainmeter.ini; Wayland limits window placement)
 2. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
 3. [ ] `[Rainmeter]` `Blur` / `BlurRegion`
-4. [ ] Tooltips (`ToolTipText`, `ToolTipTitle`, …)
-5. [ ] Right-click menu (`ContextTitle` / `ContextAction`, and `!SetOption Rainmeter Context…`)
-6. [ ] Bang `!WriteKeyValue`
-7. [ ] Bangs `!UpdateMeter` / `!UpdateMeasure`
-8. [ ] Bang `!CommandMeasure`
-9. [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction`
-10. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
-11. [ ] `IfMatch` actions
-12. [ ] `OnChangeAction`
-13. [ ] Measure option `InvertMeasure`
-14. [ ] Measure option `UpdateDivider`
-15. [ ] `[Rainmeter]` `DefaultUpdateDivider` (measures first; meters once meter `UpdateDivider` is done)
-16. [ ] Measure options `Substitute` / `RegExpSubstitute`
-17. [ ] Measure option `AverageSize`
-18. [ ] Measure option `Group` (shared helper `group.rs` already exists)
-19. [ ] Bangs `!EnableMeasureGroup`, `!DisableMeasureGroup`, `!ToggleMeasureGroup`, `!PauseMeasureGroup`, `!UnpauseMeasureGroup`, `!TogglePauseMeasureGroup` (needs measure `Group`)
-20. [ ] Meter option `AntiAlias`
+4. [ ] Right-click menu (`ContextTitle` / `ContextAction`, and `!SetOption Rainmeter Context…`)
+5. [ ] Bang `!WriteKeyValue`
+6. [ ] Bang `!CommandMeasure`
+7. [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction`
+8. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
+9. [ ] `IfMatch` actions
+10. [ ] `OnChangeAction`
+11. [ ] Measure option `UpdateDivider`
+12. [ ] `[Rainmeter]` `DefaultUpdateDivider` (measures first; meters once meter `UpdateDivider` is done)
+13. [ ] Measure options `Substitute` / `RegExpSubstitute`
+14. [ ] Measure option `AverageSize`
+15. [ ] Measure option `Group` (shared helper `group.rs` already exists)
+16. [ ] Bangs `!EnableMeasureGroup`, `!DisableMeasureGroup`, `!ToggleMeasureGroup`, `!PauseMeasureGroup`, `!UnpauseMeasureGroup`, `!TogglePauseMeasureGroup` (needs measure `Group`)
+17. [ ] Meter option `AntiAlias`
+18. [ ] Meter option `TransformationMatrix`
+19. [ ] Meter option `UpdateDivider`
+20. [ ] Meter option `Group`
 ---
 
 ## Skin files and variables
@@ -132,7 +132,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] Mouse actions: `LeftMouseUp/Down/DoubleClickAction` (and the Right/Middle versions)
 - [x] `MouseOverAction` / `MouseLeaveAction` (every meter under the mouse gets its over-action, not just the top one; leaves run before overs; a hidden meter counts as left. Differences from Windows: the whole window rectangle counts as the skin, with no transparent-pixel test; a `ClickThrough` skin gets no hover; Button meter focus waits for the Button meter)
 - [x] Scroll actions (`MouseScrollUpAction`, `MouseScrollDownAction`, `MouseScrollLeftAction`, `MouseScrollRightAction`; one action per wheel step, chosen like a click: top meter under the mouse, else `[Rainmeter]`; touchpad moves are added up into steps. Up/down tested; left/right and touchpad untested (no hardware). A `ClickThrough` skin gets no scrolls)
-- [ ] `ToolTipText`, `ToolTipTitle`, `ToolTipIcon`, `ToolTipWidth`, `ToolTipType`, `ToolTipHidden`
+- [x] `ToolTipText`, `ToolTipTitle`, `ToolTipIcon`, `ToolTipWidth`, `ToolTipType`, `ToolTipHidden` (on every meter type; the top visible meter under the mouse with its tooltip on wins; `%1`… stay live while it shows; `[Rainmeter] ToolTipHidden` is the default for meters. Laid out like Windows: icon + bold title, then the text wrapped at `ToolTipWidth`. Stock icons map to theme icons (`dialog-information`, …); an icon file is loaded once when the meter is built. Differences: `ToolTipType=1` (balloon) draws as a normal tooltip; a `ClickThrough` skin gets no tooltips; in WSLg it hides about 1 s after leaving the meter, to re-check on a real desktop)
 - [x] Bangs: `!SetVariable` (formula values; `[#Var]` in actions is read at click time)
 - [ ] Bangs: `!WriteKeyValue`
 - [x] Bangs: `!ShowMeter`, `!HideMeter`, `!ToggleMeter` (take effect at the next update, as in Rainmeter)
@@ -141,7 +141,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [ ] Bangs: `!SetOptionGroup`
 - [x] Bangs: `!Update` (restarts the Update timer), `!Redraw`
 - [x] Bangs: `!Refresh` (this skin only; reloads the file, restarts the timer, keeps the old skin on an error)
-- [ ] Bangs: `!UpdateMeter`, `!UpdateMeasure`
+- [x] Bangs: `!UpdateMeter`, `!UpdateMeasure` (`*` = all; each runs its `OnUpdateAction`; no repaint until `!Redraw`, which now also resizes a `DynamicWindowSize` skin, as in Rainmeter; meters after an updated one are placed again, since relative X/Y follow it. `!UpdateMeterGroup` / `!UpdateMeasureGroup` wait for meter/measure `Group`)
 - [x] Bangs: `!EnableMeasure`, `!DisableMeasure`, `!ToggleMeasure`, `!PauseMeasure`, `!UnpauseMeasure`, `!TogglePauseMeasure` (seen at the next update; disabled = 0, paused = last value)
 - [ ] Bangs: `!EnableMeasureGroup`, `!DisableMeasureGroup`, `!ToggleMeasureGroup`, `!PauseMeasureGroup`, `!UnpauseMeasureGroup`, `!TogglePauseMeasureGroup`
 - [ ] Bangs: `!CommandMeasure`
@@ -158,7 +158,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 
 ## General measure options
 - [x] `MinValue` / `MaxValue`
-- [ ] `InvertMeasure` (reverted earlier)
+- [x] `InvertMeasure` (MaxValue − value + MinValue when the value is read, as Rainmeter's `GetValue`; text values such as a Time's `Format` stay as they are; also through `!SetOption`. Difference: a disabled inverted measure reads 0, where Rainmeter gives MaxValue + MinValue)
 - [ ] `UpdateDivider` (reverted earlier)
 - [ ] `Substitute` / `RegExpSubstitute`
 - [ ] `AverageSize`

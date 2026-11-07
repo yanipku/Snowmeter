@@ -593,6 +593,62 @@ struct Source {
     base_dir: PathBuf,
 }
 
+/*  ToolTipsText and the options that go with it (Rainmeter's Meter::ReadOptions).
+    A meter only has one when ToolTipText isn't empty: a title alone show nothing. */
+struct ToolTip {
+    text: String,           // ToolTipText; %1, %2, ... are filled in when it show
+    title: String,          // ToolTipTitle, in bold above the text
+    icon: Option<TipIcon>,  //ToolTipIcon: a stock icon or a picture file (None = no icon)
+    width: f64,             //ToolTipWidth: how wide it may grow before the text wraps
+    hidden: Option<bool>,   //ToolTipHidden; None = not set, so [Rainmeter]'s value counts
+}
+
+impl ToolTip {
+    fn read(section: &Section, vars: &HashMap<String, String>, base_dir: &Path) -> Option<ToolTip> {
+        let text = opt(section, "tooltiptext", vars).filter(|t| !t.is_empty())?;
+        Some(ToolTip {
+            text, 
+            title: opt(section, "tooltiptitle", vars).unwrap_or_default(), 
+            icon: opt(section, "tooltipicon", vars).and_then(|name| TipIcon::read(&name, base_dir)), 
+            width: num(section, "tooltipwidth", vars, 1000.0), 
+            hidden: num_opt(section, "tooltiphidden", vars).map(|n| n != 0.0), 
+        })
+    }
+}
+
+// ToolTipIcon. Windows' stock icon become the freedesktop them icon of the same meaning.
+#[derive(Clone)]// a Pixbuf clone is only a new reference to the same picture
+pub enum TipIcon {
+    Name(&'static str),
+    File(Pixbuf),
+}
+
+impl TipIcon {
+    /*  Like Rainmeter: one of the five names (any case), else a file next to the skin.
+        A file that can't be loaded gives "No icon". */
+    fn read(name: &str, base_dir: &Path) -> Option<TipIcon> {
+        let stock=match name.trim().to_ascii_lowercase().as_str() {
+            "" => return None,
+            "info" => "dialog-information",
+            "warning" => "dialog-warning",
+            "error" => "dialog-error",
+            "question" => "dialog-question",
+            "shield" => "security-high",
+            _ => return load_image(name, base_dir, None, None).map(TipIcon::File),
+        };
+        Some(TipIcon::Name(stock))
+    }
+}
+
+// A tooltip ready to show: the meter's box (the tip area) and its words, measure values filled in
+pub struct TipShow {
+    pub area: Rect,
+    pub title: String,
+    pub text: String,
+    pub icon: Option<TipIcon>,  // only when there's a title, as in Rainmeter
+    pub width: f64,
+}
+
 pub struct Meter {
     name: String,
     x_pos: Pos, // X and Y as written
@@ -614,6 +670,7 @@ pub struct Meter {
     on_update: String,              // OnUpdateAction, #var# filled in (runs even when hidden)
     accurate_text: bool,            // [Rainmeter] AccurateText; false = GDI+ spacing (the default)
     mouse_over: bool,               // the mouse is over this meter (only tracked with MouseOver/LeaveAction)
+    tooltip: Option<ToolTip>,       // ToolTipText and friends (None = no tooltip)
 }
 
 impl Meter {
@@ -835,6 +892,9 @@ impl Meter {
 
         let hidden = num(section, "hidden", vars, 0.0) != 0.0;
 
+        // ToolTipText and frinds (section variables already filled in, as for the other option)
+        let tooltip = ToolTip::read(section, vars, base_dir);
+
         // A rebuilt meter inherits the source; a new one makes it. DynamicVariables is read
         // again each time, so !SetOption can turn it on or off.
         let source = match prev {
@@ -877,6 +937,7 @@ impl Meter {
             accurate_text: prev.is_some_and(|p| p.accurate_text),
             // A DynamicVariables rebuild must not look like the mouse just arrived
             mouse_over: prev.is_some_and(|p| p.mouse_over),
+            tooltip,
         })
     }
 
@@ -1288,6 +1349,35 @@ pub fn action_at<'a>(
         .or_else(|| skin_mouse.get(event).map(|a| ("Rainmeter", a)))
 }
 
+/*  The tooltip to show with the mouse at (x, y). As with clicks. the top-most visible meter
+    under the mouse win, but only one whose tooltip is on: ToolTipHidden=1 lets the one below
+    show. 'skin_hidden' is [Rainmeter] ToolTipHidden, used when the meter doesn't set its own.
+    %1, %2, ... become the meter's measure values now, so the text is always current. */
+pub fn tooltip_at(
+    meters: &[Meter],
+    measures: &[Box<dyn Measure>],
+    x: f64,
+    y: f64,
+    skin_hidden: bool,
+) -> Option<TipShow> {
+    meters.iter().rev().filter(|m| m.hit(x, y, measures)).find_map(|m| {
+        let tip = m.tooltip.as_ref()?;
+        if tip.hidden.unwrap_or(skin_hidden) {
+            return None;
+        }
+        let fill = |t: &str| fill_template("", t, "", Case::None, &m.measure_idx, measures);
+        let title =  fill(&tip.title);
+        Some(TipShow {
+            area: m.rect(measures), 
+            // Windows only draws the icon next to a title
+            icon: if title.is_empty() { None } else { tip.icon.clone() },
+            title, 
+            text: fill(&tip.text), 
+            width: tip.width,
+        })
+    })
+}
+
 /*  One step of Rainmeter's mouse-move handling (Skin::DoMoveAction). 'step' is Over or
     leave; 'ps' is the mouse in the window, None once it has left the window. Finds the 
     first meter (or the skin) whose "mouse is over me" flag must change, flips it, and
@@ -1373,6 +1463,7 @@ mod tests {
             on_update: String::new(),
             accurate_text: false,
             mouse_over: false,
+            tooltip: None,
         }
     }
 
@@ -1713,5 +1804,56 @@ mod tests {
         assert!(near(edge_point(180.0, 100.0, 50.0), (0.0, 25.0))); // left edge
         assert!(near(edge_point(90.0, 100.0, 50.0), (50.0, 50.0))); // bottom
         assert!(near(edge_point(-90.0, 100.0, 50.0), (50.0, 0.0))); // top
+    }
+
+    #[test]
+    fn tooltips_come_from_the_top_meter_with_one_on() {
+        let measures: Vec<Box<dyn Measure>> = Vec::new();
+        let abs = Pos::Abs(0.0);
+        let tip = |text: &str, hidden: Option<bool>| Some(ToolTip {
+            text: text.to_string(),
+            title: "Title".to_string(),
+            icon: None,
+            width: 1000.0,
+            hidden,
+        });
+        let mut under = bar("Under", abs, abs, 100.0, 100.0);
+        under.tooltip = tip("under", None);
+        let mut over = bar("Over", abs, abs, 50.0, 50.0);
+        over.tooltip = tip("over", Some(true)); // ToolTipHidden=1
+        let plain = bar("Plain", abs, abs, 20.0, 20.0); // on top, but no tooltip
+        let mut meters = vec![under, over, plain];
+        let mut layout = Layout::new();
+        for m in &mut meters {
+            layout.place(m, &measures);
+        }
+        let text = |meters: &[Meter], x, y, skin_hidden| {
+            tooltip_at(meters, &measures, x, y, skin_hidden).map(|t| t.text)
+        };
+
+        // Over's tooltip is off, so Under's show, even through Plain
+        assert_eq!(text(&meters, 10.0, 10.0, false), Some("under".to_string()));
+        // [Rainmeter] ToolTipHidden=1 also hides Under's which doesn't set its own
+        assert_eq!(text(&meters, 10.0, 10.0, true), None);
+        // the meter's own ToolTipHidden=0 beats the skin's 1
+        meters[1].tooltip = tip("over", Some(false));
+        assert_eq!(text(&meters, 10.0, 10.0, true), Some("over".to_string()));
+        // off every meter: nothing
+        assert_eq!(text(&meters, 150.0, 150.0, false), None);
+        // a hidden meter show no tooltip
+        meters[0].hidden = true;
+        assert_eq!(text(&meters, 70.0, 70.0, false), None);
+        // the tip area is the meter's box
+        let shown = tooltip_at(&meters, &measures, 10.0, 10.0, false).unwrap();
+        assert_eq!((shown.area.w, shown.area.h, shown.title.as_str()), (50.0, 50.0, "Title"));
+    }
+
+    #[test]
+    fn tooltip_icons() {
+        let dir = Path::new("/nonexistent");
+        assert!(matches!(TipIcon::read("Warning", dir), Some(TipIcon::Name("dialog-warning"))));
+        assert!(TipIcon::read("", dir).is_none());
+        // a file that isn't there: no icon, and no crash
+        assert!(TipIcon::read("icon.ico", dir).is_none());
     }
 }

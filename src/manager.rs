@@ -265,6 +265,8 @@ struct SkinWindow {
     refreshes: Cell<u32>,
     // Where the mouse is in the window (None = outside), for scroll events, which carry on position
     pointer: Cell<Option<(f64, f64)>>,
+    // our last answer to GTK's tooltip question was "show one", so updates refresh its text
+    tip_shown: Cell<bool>,
     // The short wait after a move before saving the position (see position_changed)
     save_timer: RefCell<Option<glib::SourceId>>,
     // The position last saved or loaded, so a resize alone doesn't write the file
@@ -326,6 +328,7 @@ impl SkinWindow {
                 in_refresh_action: Cell::new(false),
                 refreshes: Cell::new(0),
                 pointer: Cell::new(None),
+                tip_shown: Cell::new(false),
                 save_timer: RefCell::new(None),
                 saved_position: Cell::new(Some(position)),
             }
@@ -343,11 +346,33 @@ impl SkinWindow {
         // Stop the theme painting a background: only what draw_func paints shows.
         // Transparent pixels need a compositor; without one they show as black.
         let css = gtk4::CssProvider::new();
-        css.load_from_data("window { background: transparent; }");
+        // Tooltip icon in theme's colours (symbolic icon are painted in the css colour)
+        css.load_from_data(
+            "window { background: transparent; }
+            .snow-dialog-information, .snow-dialog-question { color: @accent_color; }
+            .snow-dialog-warning { color: @warning_color; }
+            .snow-dialog-error { color: @error_color; }
+            .snow-security-high { color: @success_color; }",
+        );
         gtk4::style_context_add_provider_for_display(
             &WidgetExt::display(&window),
             &css,
             gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+
+        /*  Our colors for a theme that doesn't name these: at FALLBACK priority, below the 
+            them, so the theme's own @warning_color and friends win when it has them */
+        let fallback = gtk4::CssProvider::new();
+        fallback.load_from_data(
+            "@define-color accent_color #1088c8;
+             @define-color warning_color #f6d32d;
+             @define-color error_color #e01b24;
+             @define-color success_color #018306;",
+        );
+        gtk4::style_context_add_provider_for_display(
+            &WidgetExt::display(&window), 
+            &fallback, 
+        gtk4::STYLE_PROVIDER_PRIORITY_FALLBACK,
         );
 
         // Drag with the left button to move the skin. The window manager does the moving,
@@ -473,6 +498,26 @@ impl SkinWindow {
             glib::Propagation::Stop
         });
         window.add_controller(scroll);
+
+        /*  Tooltips (ToolTipText). GTK asks "what tooltip here?" when the mouse rests on the 
+            skin; we answer with the top meter's, and give its box as the tip area, so GTK asks
+            again once the mouse leaves that meter. Return false means no tooltip here. */
+        area.set_has_tooltip(true);
+        let tip_me = Rc::downgrade(&sw);
+        area.connect_query_tooltip(move |widget, x, y, _keyboard, tooltip| {
+            let Some(sw) = tip_me.upgrade() else { return false };
+            let s = sw.skin.borrow();
+            let found = meter::tooltip_at(&s.meters, &s.measures, x as f64, y as f64, s.tooltip_hidden);
+            sw.tip_shown.set(found.is_some());
+            let Some(tip) = found else {
+                return false;
+            };
+            // Our own widget instead of GTK's plain label, laid out like a windows tooltip
+            tooltip.set_custom(Some(&crate::tooltip::build(&tip, widget)));
+            let r = tip.area;
+            tooltip.set_tip_area(&gdk::Rectangle::new(r.x.floor() as i32, r.y.floor() as i32, r.w.ceil() as i32, r.h.ceil() as i32));
+            true
+        });
 
         // Put the window in place: with the layer shell on Wayland, else by asking the X server
         if !crate::wlpos::setup(&window, position, settings.z) {
@@ -703,24 +748,59 @@ impl SkinWindow {
     // One update of the whole skin: measures, then meters, then the window size, then a
     // repaint. Used by the Update= timer and by !Update.
     fn update(&self) {
-        /* Measures one at the time, as in Rainmeter's UpdateMeasures: each one's OnUpdateAction
-           run right after it, with the skin let go, so the action can change the measure below */
         let mut values = crate::measure::current_values(&self.skin.borrow().measures);
+        self.update_measures(&mut values, "*");
+        self.update_meters(&values, "*");
+        self.fit_window();
+        self.area.queue_draw();
+        // A tooltip already showing bet the new measure values (only while the mouse is on the skin)
+        if self.tip_shown.get() && self.pointer.get().is_some() {
+            self.area.trigger_tooltip_query();
+        }
+        // OnUpdateAction run last, after the redraw, as in Rainmeter
+        let action = self.skin.borrow().on_update.clone();
+        self.run_skin_action("Rainmeter", action, &self.in_update_action);
+    }
+
+    /*  Updates the measure 'name' picks ("*" = all, else the first that name, any case),
+        in order, as Rainmeter's UpdateMeasure. Each one's OnUpdateAction runs right after it,
+        with the skin let go, so the action can change the measures below. 'values' gets the
+        new values, for the meters,Returns false if no measure has that name. */
+    fn update_measures(&self, values: &mut crate::measure::Values, name: &str) -> bool {
+        let all = name == "*";
+        let mut found = false;
         let mut i = 0;
         loop {
-            // [$Skin] and the others, in dynamic option, describe this skin
+            // [%Skin] and the others, in dynamic options, describe this skin
             let step = crate::dollarvar::with_skin(self.info(), || {
                 let mut s = self.skin.borrow_mut();
-                let m = s.measures.get_mut(i)?;  // None: past the last one (or a !Refresh shrank the list)
-                let action = crate::measure::update_one(m, &mut values);
-                Some((m.name().to_string(), action))
+                let m = s.measures.get_mut(i)?; // None: past the last one (or a !Refresh shrank the list)
+                if !all && (found || !m.name().eq_ignore_ascii_case(name)) {
+                    return Some(None); // not picked: left as it is
+                }
+                found = true;
+                let action = crate::measure::update_one(m, values);
+                Some(Some((m.name().to_string(), action)))
             });
-            let Some((name, action)) = step else { break };
-            self.run_skin_action(&name, action, &self.in_update_action);
+            let Some(step) = step else { break };
+            if let Some((section, action)) = step {
+                self.run_skin_action(&section, action, &self.in_update_action);
+            }
+            if found && !all {
+                break; // the one asked for is done
+            }
             i += 1;
         }
-        /* Meters the same way: each one's OnUpdateAction run right after it update.
-           Position start from where every meter is now, for [meter:X] references further down */
+        found || all
+    }
+
+    /*  The same for meters, as Rainmeter's UpdateMeter. The meters not picked are only placed
+        agin: in Rainmeter a relative X/Y follows the meter before it at draw time, so a meter
+        after one that change size must move. Positions start from where every meter is now,
+        for [Meter:X] references to meter further down. */
+    fn update_meters(&self, values: &crate::measure::Values, name: &str) -> bool {
+        let all = name == "*";
+        let mut found = false;
         let mut layout = {
             let s = self.skin.borrow();
             meter::Layout::seeded(&s.meters, &s.measures)
@@ -731,28 +811,36 @@ impl SkinWindow {
                 let mut guard = self.skin.borrow_mut();
                 let s = &mut *guard;
                 let m = s.meters.get_mut(i)?;
-                // Meters refresh their dynamic options, graph record, and the meter is place
-                let action = meter::update_one(m, &s.measures, &values, &mut layout);
-                Some((m.name().to_string(), action))
+                if !all && (found || !m.name().eq_ignore_ascii_case(name)) {
+                    layout.place(m, &s.measures);
+                    return Some(None);
+                }
+                found = true;
+                // Dynamic options read again, graph history, then the meter is place
+                let action = meter::update_one(m, &s.measures, values, &mut layout);
+                Some(Some((m.name().to_string(), action)))
             });
-            let Some((name, action)) = step else { break };
-            self.run_skin_action(&name, action, &self.in_update_action);
+            let Some(step) = step else { break };
+            if let Some((section, action)) = step {
+                self.run_skin_action(&section, action, &self.in_update_action);
+            }
             i += 1;
         }
-        //DynamicWindowSize=1: the window follows the meters
+        found || all
+    }
+
+    /*  DynamicWindowSize=1: the window follows the meters. Used after an update and by !Redraw,
+        since Rainmeter's redraw resize the window when !UpdateMeter changed a meter. */
+    fn fit_window(&self) {
         let new_size = crate::dollarvar::with_skin(self.info(), || {
             let s = self.skin.borrow();
             s.dynamic_window.then(|| skin::window_size(&s.meters, &s.measures, s.fixed_size, s.background.as_ref(), s.background_margins))
         });
-        // Resize outside the borrow, so nothing can ask to draw while the skin is locked
+        // Resize outside the borrow, so nothig can ask to draw while the skin is locked
         if let Some((w, h)) = new_size {
             self.area.set_content_width(w);
             self.area.set_content_height(h);
         }
-        self.area.queue_draw();
-        // OnUpdateAction run last, after the redraw, as in Rainmeter
-        let action = self.skin.borrow().on_update.clone();
-        self.run_skin_action("Rainmeter", action, &self.in_update_action);
     }
 
     // !Refresh: reads the skin file again and puts the new skin in place of the old one.
@@ -909,7 +997,22 @@ impl SkinWindow {
         // Borrowed for this bang only: !Update needs to borrow the skin itself
         let after = action::execute(&mut self.skin.borrow_mut(), command);
         match after {
-            After::Redraw => self.area.queue_draw(),
+            After::Redraw => {
+                self.fit_window();
+                self.area.queue_draw();
+            }
+            After::UpdateMeter(name) => {
+                let values = crate::measure::current_values(&self.skin.borrow().measures);
+                if !self.update_meters(&values, &name) {
+                    eprintln!("!UpdateMeter: [{name}] not found");
+                }
+            }
+            After::UpdateMeasure(name) => {
+                let mut values = crate::measure::current_values(&self.skin.borrow().measures);
+                if !self.update_measures(&mut values, &name) {
+                    eprintln!("!UpdateMeasure: [{name}] not found");
+                }
+            }
             After::Window(bang) => self.apply_window_bang(bang),
             After::Update => {
                 // As in Rainmeter, the next tick comes a full Update= later

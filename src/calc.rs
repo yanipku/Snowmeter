@@ -189,7 +189,7 @@ impl Measure for CalcMeasure {
 }
 
 // 5 -> "5", 3.14159265 -> "3.14159", 0.5 -> "0.5"
-fn format_number(v: f64) -> String {
+pub fn format_number(v: f64) -> String {
     let s = format!("{:.5}", v);
     let s = s.trim_end_matches('0').trim_end_matches('.');
     if s.is_empty() || s == "-0" {

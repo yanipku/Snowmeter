@@ -8,11 +8,13 @@ use crate::skin::Skin;
 // What the window has to do after a bang, since bangs can't reach the window themselves
 pub enum After {
     Nothing,
-    Redraw, // !Redraw: paint the skin as it is now
-    Update, // !Update: a full update straight away, then paint
-    Refresh, // !Refresh: read the skin file again from scratch
-    Config(ConfigBang), // a bang that loads or unloads skins: only the manager can do it
-    Window(WindowBang), // a bang that changes a window setting: only the window can do it
+    Redraw,                 // !Redraw: paint the skin as it is now
+    Update,                 // !Update: a full update straight away, then paint
+    UpdateMeter(String),    // !UpdateMeter Name: update that meter now ("*" = all); no repaint
+    UpdateMeasure(String),  // !UpdateMeasure Name: the same for a measure
+    Refresh,                // !Refresh: read the skin file again from scratch
+    Config(ConfigBang),     // a bang that loads or unloads skins: only the manager can do it
+    Window(WindowBang),     // a bang that changes a window setting: only the window can do it
 }
 
 // !ZPos, !Draggable, !ClickThrough, !KeepOnScreen, !SnapEdges, !Move. For the settings, the
@@ -58,6 +60,7 @@ fn arg_count(bang: &str) -> Option<usize> {
         "redraw" | "update" | "refresh" => Some(0),
         "showmeter" | "hidemeter" | "togglemeter" => Some(1),
         "enablemeasure" | "disablemeasure" | "togglemeasure" => Some(1),
+        "updatemeter" | "updatemeasure" => Some(1),
         "pausemeasure" | "unpausemeasure" | "togglepausemeasure" => Some(1),
         "zpos" | "changezpos" | "draggable" | "clickthrough" | "keeponscreen" | "snapedges" => Some(1),
         "setvariable" | "move" => Some(2),
@@ -186,6 +189,13 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
         }
         "redraw" => After::Redraw,
         "update" => After::Update,
+        "updatemeter" | "updatemeasure" => {
+            let Some(section) = args.first().cloned() else {
+                eprintln!("!{name}: Incorrect number of arguments");
+                return After::Nothing;
+            };
+            if lower == "updatemeter" {After::UpdateMeter(section)} else { After::UpdateMeasure(section) }
+        }
         "refresh" => After::Refresh,
         "activateconfig" | "toggleconfig" => {
             let Some(config) = args.first().cloned() else {

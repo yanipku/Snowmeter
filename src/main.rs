@@ -19,6 +19,7 @@ mod position;
 mod sectionvar;
 mod skin;
 mod textfile;
+mod tooltip;
 mod wlpos;
 mod x11pos;
 
