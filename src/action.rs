@@ -4,6 +4,7 @@
 use crate::formula;
 use crate::position::ZPos;
 use crate::skin::Skin;
+use crate::measure::Measure;
 
 // What the window has to do after a bang, since bangs can't reach the window themselves
 pub enum After {
@@ -62,6 +63,8 @@ fn arg_count(bang: &str) -> Option<usize> {
         "enablemeasure" | "disablemeasure" | "togglemeasure" => Some(1),
         "updatemeter" | "updatemeasure" => Some(1),
         "pausemeasure" | "unpausemeasure" | "togglepausemeasure" => Some(1),
+        "enablemeasuregroup" | "disablemeasuregroup" | "togglemeasuregroup" => Some(1),
+        "pausemeasuregroup" | "unpausemeasuregroup" | "togglepausemeasuregroup" => Some(1),
         "zpos" | "changezpos" | "draggable" | "clickthrough" | "keeponscreen" | "snapedges" => Some(1),
         "setvariable" | "move" => Some(2),
         "setoption" => Some(3),
@@ -114,6 +117,13 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
     let lower = name.to_ascii_lowercase();
     // A group bang runs as the plain bang: !RefreshGroup refreshes each skin it's sent to
     let lower = group_base(&lower).unwrap_or(&lower).to_string();
+    /*  !DisableMeasureGroup and the other measure group bangs run as the plain gang, on every
+        measure in the group */
+    let (lower, by_group) = match lower.strip_suffix("group") {
+        Some(base @ ("enablemeasure" | "disablemeasure" | "togglemeasure" | "pausemeasure"
+            | "unpausemeasure" | "togglepausemeasure")) => (base.to_string(), true),
+        _ => (lower, false),
+    };
     match lower.as_str() {
         "showmeter" | "hidemeter" | "togglemeter" => {
             let Some(meter_name) = args.first() else {
@@ -138,17 +148,33 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
                 eprintln!("!{name}: needs the name of a measure");
                 return After::Nothing;
             };
-            let Some(switch) = skin.measure_switch(measure_name) else {
-                eprintln!("!{name}: [{measure_name}] not found");
-                return After::Nothing;
+            // Group=Clock work like the group bang, as in newer Rainmeter (ConsumeGroupSelector)
+            let (wanted, by_group) = match measure_name.strip_prefix("Group=") {
+                Some(group) => (group, true),
+                None => (measure_name.as_str(), by_group),
             };
-            match lower.as_str() {
-                "enablemeasure" => switch.set_disabled(false),
-                "disablemeasure" => switch.set_disabled(true),
-                "togglemeasure" => switch.set_disabled(!switch.is_disabled()),
-                "pausemeasure" => switch.set_paused(true),
-                "unpausemeasure" => switch.set_paused(false),
-                _ => switch.set_paused(!switch.is_paused()), // togglepausemeasure
+            let mut found = false;
+            for switch in skin.measures.iter_mut().filter_map(|m| m.switch_mut()) {
+                let hit = if by_group { switch.in_group(wanted) } else { switch.name().eq_ignore_ascii_case(wanted) };
+                if !hit {
+                    continue;
+                }
+                match lower.as_str() {
+                    "enablemeasure" => switch.set_disabled(false),
+                    "disablemeasure" => switch.set_disabled(true),
+                    "togglemeasure" => switch.set_disabled(!switch.is_disabled()),
+                    "pausemeasure" => switch.set_paused(true),
+                    "unpausemeasure" => switch.set_paused(false),
+                    _ => switch.set_paused(!switch.is_paused()), // togglepausemeasure
+                }
+                found = true;
+                if !by_group {
+                    break; // a name picks one measure
+                }
+            }
+            // A group with no measure in it is fine, as in Rainmeter
+            if !found && !by_group {
+                eprintln!("!{name}: [{measure_name}] not found");
             }
             After::Nothing // like Rainmeter: seen at the next update
         }
@@ -413,6 +439,9 @@ mod tests {
         // The measure bangs take one
         assert_eq!(target("!DisableMeasure CPU"), Target::This);
         assert_eq!(target("!TogglePauseMeasure CPU Other"), config("Other"));
+        // and so do their group forms: the group, then the config
+        assert_eq!(target("!DisableMeasureGroup clocks"), Target::This);
+        assert_eq!(target("!PauseMeasureGroup Clocks Other"), config("Other"));
         // !SetOption takes three
         assert_eq!(target("!SetOption Label Text Hi"), Target::This);
         assert_eq!(target(r#"!SetOption Label Text "" Other"#), config("Other"));

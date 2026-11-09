@@ -1,5 +1,6 @@
 use crate::ini::{self, Section};
 use crate::{formula, sectionvar};
+use crate::group::Groups;
 use std::collections::HashMap;
 
 // A measure's latest values, as seen by Calc formulas and section variables
@@ -117,7 +118,8 @@ pub struct Switch {
     vars: HashMap<String, String>,  // this measure's copy of the variables
     reread_once: bool,              // read the options again at the next update
     on_update: String,              // OnUpdateAction, as written
-    ran: bool,                      // the last update reached the measure (not paused/diabled)
+    ran: bool,                      // the last update reached the measure (not paused/disabled)
+    groups: Groups,                  // Group=, for !DisableMeasureGroup and the other group bangs
 }
 
 impl Switch {
@@ -125,7 +127,7 @@ impl Switch {
         let (source, vars) = (None, HashMap::new());
         Switch {
              inner, disabled, paused, zeroed: false, source, vars,
-             reread_once: false, on_update: String::new(), ran: false,
+             reread_once: false, on_update: String::new(), ran: false, groups: Groups::default(),
             }
     }
 
@@ -134,6 +136,7 @@ impl Switch {
         self.source = Some(section.clone());
         self.vars = vars.clone();
         self.read_on_update();
+        self.read_group();
         self
     }
 
@@ -143,6 +146,13 @@ impl Switch {
         self.on_update = src.options.get("onupdateaction")
             .map(|v| ini::resolve(v, &self.vars))
             .unwrap_or_default();
+    }
+
+    // Grop=, with #var# filled in. read again after !setOption, as in Rainmeter.
+    fn read_group(&mut self) {
+        let Some(src) = &self.source else { return };
+        let text = src.options.get("group").map(|v| ini::resolve(v, &self.vars)).unwrap_or_default();
+        self.groups = Groups::read_group(&text);
     }
 
     // !SetOption: changes one option as written, and rereads them all at the next update
@@ -180,6 +190,11 @@ impl Switch {
         self.paused
     }
 
+    // whter the measure is in the group a broup bang names (A, A|B or A&B)
+    pub fn in_group(&self, query: &str) -> bool {
+        self.groups.matches(query)
+    }
+
     fn write_flag(&mut self, key: &str, on: bool) {
         if let Some(src) = self.source.as_mut() {
             src.options.insert(key.to_string(), if on { "1" } else { "0" }.to_string());
@@ -204,6 +219,7 @@ impl Switch {
         (self.disabled, self.paused) = (flag("disabled"), flag("paused"));
         self.inner.reread(&section, &self.vars);
         self.read_on_update();
+        self.read_group();
     }
 
     // Whether this update should reach the measure inside
@@ -505,5 +521,20 @@ mod tests {
         assert_eq!((ranged.value(), ranged.text()), (7.0, "7".to_string()));
         // The range itself doesn't change, so a bar simply fills the other way round
         assert_eq!(ranged.range(), (0.0, 10.0));
+    }
+
+    #[test]
+    fn measure_groups() {
+        let mut options = HashMap::new();
+        options.insert("group".to_string(), "#kind# | Slow".to_string());
+        let section = Section { name: "Count".to_string(), options };
+        let vars = HashMap::from([("kind".to_string(), "Clocks".to_string())]);
+        let mut s = Switch::new(Box::new(Count(0.0)), false, false). with_source(&section, &vars);
+        assert!(s.in_group("clocks") && s.in_group("Clocks&Slow"));
+        assert!(!s.in_group("Fast"));
+        // !setOption Count Group Fast: the nwe group counts from the next update
+        s.set_option("Group", "Fast");
+        s.update();
+        assert!(s.in_group("Fast") && !s.in_group("Clocks"));
     }
 }

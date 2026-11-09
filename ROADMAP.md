@@ -15,7 +15,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 76 / 156 ≈ **49%**
+- Roadmap checklist: 78 / 156 = **50%**
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
   - X11: 4 / 7 ≈ **57%**
@@ -37,12 +37,12 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 12. [ ] `[Rainmeter]` `DefaultUpdateDivider` (measures first; meters once meter `UpdateDivider` is done)
 13. [ ] Measure options `Substitute` / `RegExpSubstitute`
 14. [ ] Measure option `AverageSize`
-15. [ ] Measure option `Group` (shared helper `group.rs` already exists)
-16. [ ] Bangs `!EnableMeasureGroup`, `!DisableMeasureGroup`, `!ToggleMeasureGroup`, `!PauseMeasureGroup`, `!UnpauseMeasureGroup`, `!TogglePauseMeasureGroup` (needs measure `Group`)
-17. [ ] Meter option `AntiAlias`
-18. [ ] Meter option `TransformationMatrix`
-19. [ ] Meter option `UpdateDivider`
-20. [ ] Meter option `Group`
+15. [ ] Meter option `AntiAlias`
+16. [ ] Meter option `TransformationMatrix`
+17. [ ] Meter option `UpdateDivider`
+18. [ ] Meter option `Group`
+19. [ ] Bangs `!ShowMeterGroup`, `!HideMeterGroup`, `!ToggleMeterGroup` (needs meter `Group`)
+20. [ ] Bang `!SetOptionGroup` (needs measure and meter `Group`)
 ---
 
 ## Skin files and variables
@@ -141,9 +141,9 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [ ] Bangs: `!SetOptionGroup`
 - [x] Bangs: `!Update` (restarts the Update timer), `!Redraw`
 - [x] Bangs: `!Refresh` (this skin only; reloads the file, restarts the timer, keeps the old skin on an error)
-- [x] Bangs: `!UpdateMeter`, `!UpdateMeasure` (`*` = all; each runs its `OnUpdateAction`; no repaint until `!Redraw`, which now also resizes a `DynamicWindowSize` skin, as in Rainmeter; meters after an updated one are placed again, since relative X/Y follow it. `!UpdateMeterGroup` / `!UpdateMeasureGroup` wait for meter/measure `Group`)
+- [x] Bangs: `!UpdateMeter`, `!UpdateMeasure` (`*` = all; each runs its `OnUpdateAction`; no repaint until `!Redraw`, which now also resizes a `DynamicWindowSize` skin, as in Rainmeter; meters after an updated one are placed again, since relative X/Y follow it. `!UpdateMeasureGroup` not yet; `!UpdateMeterGroup` waits for meter `Group`)
 - [x] Bangs: `!EnableMeasure`, `!DisableMeasure`, `!ToggleMeasure`, `!PauseMeasure`, `!UnpauseMeasure`, `!TogglePauseMeasure` (seen at the next update; disabled = 0, paused = last value)
-- [ ] Bangs: `!EnableMeasureGroup`, `!DisableMeasureGroup`, `!ToggleMeasureGroup`, `!PauseMeasureGroup`, `!UnpauseMeasureGroup`, `!TogglePauseMeasureGroup`
+- [x] Bangs: `!EnableMeasureGroup`, `!DisableMeasureGroup`, `!ToggleMeasureGroup`, `!PauseMeasureGroup`, `!UnpauseMeasureGroup`, `!TogglePauseMeasureGroup` (also the newer `Group=Name` form of the plain bangs, e.g. `!DisableMeasure Group=Clocks`; a group with no measures in it is silent, as in Rainmeter)
 - [ ] Bangs: `!CommandMeasure`
 - [x] Bangs: `!Move` (plain pixel numbers from the primary monitor; KeepOnScreen applies, as in Rainmeter)
 - [x] Bangs for the window settings: `!ZPos`, `!Draggable`, `!ClickThrough`, `!KeepOnScreen`, `!SnapEdges` (1, 0, or -1 to toggle; the new value is saved to the settings file)
@@ -163,7 +163,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [ ] `Substitute` / `RegExpSubstitute`
 - [ ] `AverageSize`
 - [x] `Disabled` / `Paused`
-- [ ] `Group`
+- [x] `Group` (`#Variables#` filled in; read again after `!SetOption`)
 
 ## Measures
 - [x] `CPU`: total usage
