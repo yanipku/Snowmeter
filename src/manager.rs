@@ -1,6 +1,6 @@
 // The running skins: one window per config (a folder under Skins, like illustro\Clock),
 // as in Rainmeter, where at most one skin of each config runs at a time.
-use crate::action::{self, After, ConfigBang, Target, WindowBang};
+use crate::action::{self, After, ConfigBang, Pick, Target, WindowBang};
 use crate::dollarvar::SkinInfo;
 use crate::position::ZPos;
 use crate::config::{self, Config, SkinSettings};
@@ -749,8 +749,8 @@ impl SkinWindow {
     // repaint. Used by the Update= timer and by !Update.
     fn update(&self) {
         let mut values = crate::measure::current_values(&self.skin.borrow().measures);
-        self.update_measures(&mut values, "*");
-        self.update_meters(&values, "*");
+        self.update_measures(&mut values, &Pick::All);
+        self.update_meters(&values, &Pick::All);
         self.fit_window();
         self.area.queue_draw();
         // A tooltip already showing bet the new measure values (only while the mouse is on the skin)
@@ -762,12 +762,11 @@ impl SkinWindow {
         self.run_skin_action("Rainmeter", action, &self.in_update_action);
     }
 
-    /*  Updates the measure 'name' picks ("*" = all, else the first that name, any case),
-        in order, as Rainmeter's UpdateMeasure. Each one's OnUpdateAction runs right after it,
-        with the skin let go, so the action can change the measures below. 'values' gets the
-        new values, for the meters,Returns false if no measure has that name. */
-    fn update_measures(&self, values: &mut crate::measure::Values, name: &str) -> bool {
-        let all = name == "*";
+    /*  Updates the measure 'pick' names, in order, as Rainmeter's UpdateMeasure: all, the 
+        first with that name (any case), or every one in a group. Each one's OnUpdateAction
+        run right after it, with the skin let go, so the action can change the measures 
+        below. 'values' get the new values, for the meter. Return whther any was picked. */
+    fn update_measures(&self, values: &mut crate::measure::Values, pick: &Pick) -> bool {
         let mut found = false;
         let mut i = 0;
         loop {
@@ -775,7 +774,12 @@ impl SkinWindow {
             let step = crate::dollarvar::with_skin(self.info(), || {
                 let mut s = self.skin.borrow_mut();
                 let m = s.measures.get_mut(i)?; // None: past the last one (or a !Refresh shrank the list)
-                if !all && (found || !m.name().eq_ignore_ascii_case(name)) {
+                let picked = match pick {
+                    Pick::All => true,
+                    Pick::Name(name) => m.name().eq_ignore_ascii_case(name),
+                    Pick::Group(group) => m.switch_mut().is_some_and(|sw| sw.in_group(group)),
+                };
+                if !picked {
                     return Some(None); // not picked: left as it is
                 }
                 found = true;
@@ -786,20 +790,19 @@ impl SkinWindow {
             if let Some((section, action)) = step {
                 self.run_skin_action(&section, action, &self.in_update_action);
             }
-            if found && !all {
-                break; // the one asked for is done
+            if found && matches!(pick, Pick::Name(_)) {
+                break; // a name picks one measure: done
             }
             i += 1;
         }
-        found || all
+        found
     }
 
     /*  The same for meters, as Rainmeter's UpdateMeter. The meters not picked are only placed
         agin: in Rainmeter a relative X/Y follows the meter before it at draw time, so a meter
         after one that change size must move. Positions start from where every meter is now,
         for [Meter:X] references to meter further down. */
-    fn update_meters(&self, values: &crate::measure::Values, name: &str) -> bool {
-        let all = name == "*";
+    fn update_meters(&self, values: &crate::measure::Values, pick: &Pick) -> bool {
         let mut found = false;
         let mut layout = {
             let s = self.skin.borrow();
@@ -811,7 +814,12 @@ impl SkinWindow {
                 let mut guard = self.skin.borrow_mut();
                 let s = &mut *guard;
                 let m = s.meters.get_mut(i)?;
-                if !all && (found || !m.name().eq_ignore_ascii_case(name)) {
+                let picked = match pick {
+                    Pick::All => true,
+                    Pick::Name(name) => m.name().eq_ignore_ascii_case(name),
+                    Pick::Group(group) => m.in_group(group),
+                };
+                if !picked {
                     layout.place(m, &s.measures);
                     return Some(None);
                 }
@@ -826,7 +834,7 @@ impl SkinWindow {
             }
             i += 1;
         }
-        found || all
+        found
     }
 
     /*  DynamicWindowSize=1: the window follows the meters. Used after an update and by !Redraw,
@@ -1001,15 +1009,15 @@ impl SkinWindow {
                 self.fit_window();
                 self.area.queue_draw();
             }
-            After::UpdateMeter(name) => {
+            After::UpdateMeter(pick) => {
                 let values = crate::measure::current_values(&self.skin.borrow().measures);
-                if !self.update_meters(&values, &name) {
+                if !self.update_meters(&values, &pick) && let Pick::Name(name) = &pick {
                     eprintln!("!UpdateMeter: [{name}] not found");
                 }
             }
-            After::UpdateMeasure(name) => {
+            After::UpdateMeasure(pick) => {
                 let mut values = crate::measure::current_values(&self.skin.borrow().measures);
-                if !self.update_measures(&mut values, &name) {
+                if !self.update_measures(&mut values, &pick) && let Pick::Name(name) = &pick {
                     eprintln!("!UpdateMeasure: [{name}] not found");
                 }
             }

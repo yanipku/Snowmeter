@@ -15,7 +15,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 78 / 156 = **50%**
+- Roadmap checklist: 81 / 156 ≈ **52%**
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
   - X11: 4 / 7 ≈ **57%**
@@ -40,9 +40,9 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 15. [ ] Meter option `AntiAlias`
 16. [ ] Meter option `TransformationMatrix`
 17. [ ] Meter option `UpdateDivider`
-18. [ ] Meter option `Group`
-19. [ ] Bangs `!ShowMeterGroup`, `!HideMeterGroup`, `!ToggleMeterGroup` (needs meter `Group`)
-20. [ ] Bang `!SetOptionGroup` (needs measure and meter `Group`)
+18. [ ] Meter `Container`
+19. [ ] Running programs from actions (safely, never through a shell)
+20. [ ] Measure `CPU`: `Processor=N`
 ---
 
 ## Skin files and variables
@@ -136,12 +136,12 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] Bangs: `!SetVariable` (formula values; `[#Var]` in actions is read at click time)
 - [ ] Bangs: `!WriteKeyValue`
 - [x] Bangs: `!ShowMeter`, `!HideMeter`, `!ToggleMeter` (take effect at the next update, as in Rainmeter)
-- [ ] Bangs: `!ShowMeterGroup`, `!HideMeterGroup`, `!ToggleMeterGroup`
+- [x] Bangs: `!ShowMeterGroup`, `!HideMeterGroup`, `!ToggleMeterGroup` (also `!ShowMeter Group=Name` and the like; a toggle flips each meter on its own; a group with no meters in it is silent, as in Rainmeter)
 - [x] Bangs: `!SetOption` on meters and measures (read again at the next update, as in Rainmeter; a measure keeps its state, such as the Calc counter). `[Rainmeter]` (`ContextTitle`/`ContextAction`) waits for the right-click menu
-- [ ] Bangs: `!SetOptionGroup`
+- [x] Bangs: `!SetOptionGroup` (every meter, then every measure, in the group; also `!SetOption Group=Name …`; an empty value removes the option, even the one written in the file, as in Rainmeter)
 - [x] Bangs: `!Update` (restarts the Update timer), `!Redraw`
 - [x] Bangs: `!Refresh` (this skin only; reloads the file, restarts the timer, keeps the old skin on an error)
-- [x] Bangs: `!UpdateMeter`, `!UpdateMeasure` (`*` = all; each runs its `OnUpdateAction`; no repaint until `!Redraw`, which now also resizes a `DynamicWindowSize` skin, as in Rainmeter; meters after an updated one are placed again, since relative X/Y follow it. `!UpdateMeasureGroup` not yet; `!UpdateMeterGroup` waits for meter `Group`)
+- [x] Bangs: `!UpdateMeter`, `!UpdateMeasure` (`*` = all; each runs its `OnUpdateAction`; no repaint until `!Redraw`, which now also resizes a `DynamicWindowSize` skin, as in Rainmeter; meters after an updated one are placed again, since relative X/Y follow it. also `!UpdateMeasureGroup` / `!UpdateMeterGroup` and `Group=Name`, where `*` is a group name)
 - [x] Bangs: `!EnableMeasure`, `!DisableMeasure`, `!ToggleMeasure`, `!PauseMeasure`, `!UnpauseMeasure`, `!TogglePauseMeasure` (seen at the next update; disabled = 0, paused = last value)
 - [x] Bangs: `!EnableMeasureGroup`, `!DisableMeasureGroup`, `!ToggleMeasureGroup`, `!PauseMeasureGroup`, `!UnpauseMeasureGroup`, `!TogglePauseMeasureGroup` (also the newer `Group=Name` form of the plain bangs, e.g. `!DisableMeasure Group=Clocks`; a group with no measures in it is silent, as in Rainmeter)
 - [ ] Bangs: `!CommandMeasure`
@@ -196,7 +196,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [ ] `AntiAlias`
 - [ ] `TransformationMatrix`
 - [ ] `UpdateDivider`
-- [ ] `Group`
+- [x] `Group` (`#Variables#` and section variables filled in; read again on every rebuild, so `!SetOption` and `DynamicVariables` change it)
 - [ ] `Container`
 
 ## String meter
@@ -227,7 +227,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [ ] `Tile`
 - [ ] `ScaleMargins`
 - [ ] `MaskImageName`
-- [ ] Image modifiers: `ImageTint`, `ImageCrop`, `ImageRotate`, `ImageFlip`, `Greyscale`, `ColorMatrix`
+- [ ] Image modifiers: `ImageTint`, `ImageCrop`, `ImageRotate`, `ImageFlip`, `Greyscale`, `ColorMatrix`, `UseExifOrientation` (one shared image helper, as Rainmeter's GeneralImage; also used by `BarImage`, `MaskImageName`, the Histogram images, `Rotator`, `Button` and `Bitmap`, with their own prefixes such as `PrimaryImageTint`)
 
 ## Line meter
 - [x] `LineCount`, `LineColor`, `Scale`, `LineWidth`, `HorizontalLines`, `AutoScale`, `GraphStart`, `GraphOrientation`, `Flip`

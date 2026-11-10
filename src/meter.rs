@@ -1,4 +1,5 @@
 use crate::formula;
+use crate::group::Groups;
 use crate::ini::{self, Section};
 use crate::measure::{Measure, Values};
 use crate::mouse::{MouseActions, MouseEvent};
@@ -671,6 +672,7 @@ pub struct Meter {
     accurate_text: bool,            // [Rainmeter] AccurateText; false = GDI+ spacing (the default)
     mouse_over: bool,               // the mouse is over this meter (only tracked with MouseOver/LeaveAction)
     tooltip: Option<ToolTip>,       // ToolTipText and friends (None = no tooltip)
+    groups: Groups,                 // Group=, for !ShowMeterGroup bangs
 }
 
 impl Meter {
@@ -938,6 +940,7 @@ impl Meter {
             // A DynamicVariables rebuild must not look like the mouse just arrived
             mouse_over: prev.is_some_and(|p| p.mouse_over),
             tooltip,
+            groups: Groups::read_group(&opt(section, "group", vars).unwrap_or_default()),
         })
     }
 
@@ -989,6 +992,11 @@ impl Meter {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    // Whether the meter is in the group a group bang names (A, A|B or A&B)
+    pub fn in_group(&self, query: &str) -> bool {
+        self.groups.matches(query)
     }
 
     // Called after the measures update, in order, by update_all
@@ -1464,6 +1472,7 @@ mod tests {
             accurate_text: false,
             mouse_over: false,
             tooltip: None,
+            groups: Groups::default(),
         }
     }
 
@@ -1855,5 +1864,14 @@ mod tests {
         assert!(TipIcon::read("", dir).is_none());
         // a file that isn't there: no icon, and no crash
         assert!(TipIcon::read("icon.ico", dir).is_none());
+    }
+
+    #[test]
+    fn meter_groups() {
+        let abs = Pos::Abs(0.0);
+        let mut m = bar("Clock", abs, abs, 10.0, 10.0);
+        assert!(!m.in_group("Clocks")); //no Group=: in no group
+        m.groups = Groups::read_group("Clocks | Big");
+        assert!(m.in_group("clocks") && m.in_group("big&Clocks") && !m.in_group("small"));
     }
 }

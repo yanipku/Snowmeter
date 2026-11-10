@@ -11,11 +11,31 @@ pub enum After {
     Nothing,
     Redraw,                 // !Redraw: paint the skin as it is now
     Update,                 // !Update: a full update straight away, then paint
-    UpdateMeter(String),    // !UpdateMeter Name: update that meter now ("*" = all); no repaint
-    UpdateMeasure(String),  // !UpdateMeasure Name: the same for a measure
+    UpdateMeter(Pick),    // !UpdateMeter Name: update the meters it picks now; no repaint
+    UpdateMeasure(Pick),  // !UpdateMeasure Name: the same for a measure
     Refresh,                // !Refresh: read the skin file again from scratch
     Config(ConfigBang),     // a bang that loads or unloads skins: only the manager can do it
     Window(WindowBang),     // a bang that changes a window setting: only the window can do it
+}
+// which meter or measure !UpdateMeter / !UpdateMeasure (and their group forms) work on
+#[derive(Debug, PartialEq)]
+pub enum Pick {
+    All,            // "*"
+    Name(String),   // the first one with this name (any case)
+    Group(String),  // every one in this group (A, A|B or A&B)
+}
+
+impl Pick {
+    /* The bang's argument. Group=Name, or a group bang, means a group; then "*" is just a
+        group name, as in Rainmeter.  */
+    fn read(arg: &str, by_group: bool) -> Pick {
+        match arg.strip_prefix("Group=") {
+            Some(group) => Pick::Group(group.to_string()),
+            None if by_group => Pick::Group(arg.to_string()),
+            None if arg == "*" => Pick::All,
+            None => Pick::Name(arg.to_string()),
+        }
+    }
 }
 
 // !ZPos, !Draggable, !ClickThrough, !KeepOnScreen, !SnapEdges, !Move. For the settings, the
@@ -60,14 +80,17 @@ fn arg_count(bang: &str) -> Option<usize> {
     match bang {
         "redraw" | "update" | "refresh" => Some(0),
         "showmeter" | "hidemeter" | "togglemeter" => Some(1),
+        "showmetergroup" | "hidemetergroup" | "togglemetergroup" => Some(1),
         "enablemeasure" | "disablemeasure" | "togglemeasure" => Some(1),
         "updatemeter" | "updatemeasure" => Some(1),
+        "updatemetergroup" | "updatemeasuregroup" => Some(1),
         "pausemeasure" | "unpausemeasure" | "togglepausemeasure" => Some(1),
         "enablemeasuregroup" | "disablemeasuregroup" | "togglemeasuregroup" => Some(1),
         "pausemeasuregroup" | "unpausemeasuregroup" | "togglepausemeasuregroup" => Some(1),
         "zpos" | "changezpos" | "draggable" | "clickthrough" | "keeponscreen" | "snapedges" => Some(1),
         "setvariable" | "move" => Some(2),
         "setoption" => Some(3),
+        "setoptiongroup" => Some(3),
         _ => None,
     }
 }
@@ -118,10 +141,11 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
     // A group bang runs as the plain bang: !RefreshGroup refreshes each skin it's sent to
     let lower = group_base(&lower).unwrap_or(&lower).to_string();
     /*  !DisableMeasureGroup and the other measure group bangs run as the plain gang, on every
-        measure in the group */
+        measure and meter in the group */
     let (lower, by_group) = match lower.strip_suffix("group") {
         Some(base @ ("enablemeasure" | "disablemeasure" | "togglemeasure" | "pausemeasure"
-            | "unpausemeasure" | "togglepausemeasure")) => (base.to_string(), true),
+            | "unpausemeasure" | "togglepausemeasure" | "showmeter" | "hidemeter"
+            | "togglemeter" | "updatemeter" | "updatemeasure" | "setoption")) => (base.to_string(), true),
         _ => (lower, false),
     };
     match lower.as_str() {
@@ -130,16 +154,32 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
                 eprintln!("!{name}: needs the name of a meter");
                 return After::Nothing;
             };
-            let Some(meter) = skin.meter_mut(meter_name) else {
-                eprintln!("!{name}: no meter named \"{meter_name}\"");
-                return After::Nothing;
+            // Group=Bars work like the group bang, as for the measure bangs
+            let (wanted, by_group) = match meter_name.strip_prefix("Group=") {
+                Some(group) => (group, true),
+                None => (meter_name.as_str(), by_group),
             };
-            let hide = match lower.as_str() {
-                "showmeter" => false,
-                "hidemeter" => true,
-                _ => !meter.is_hidden(), // toggle: the opposite of now
-            };
-            meter.set_hidden(hide);
+            let mut found = false;
+            for meter in skin.meters.iter_mut() {
+                let hit = if by_group { meter.in_group(wanted) } else { meter.name().eq_ignore_ascii_case(wanted) };
+                if !hit {
+                    continue;
+                }
+                let hide = match lower.as_str() {
+                    "showmeter" => false,
+                    "hidemeter" => true,
+                    _ => !meter.is_hidden(), // toggle: each meter the opposite of now
+                };
+                meter.set_hidden(hide);
+                found = true;
+                if !by_group {
+                    break; // a name picks one meter
+                }
+            }
+            // A group with no meter in it is fine, as in Rainmeter
+            if !found && !by_group {
+                eprintln!("!{name}: [{meter_name}] not found");
+            }
             After::Nothing // like Rainmeter: seen at the next update or !Redraw
         }
         "enablemeasure" | "disablemeasure" | "togglemeasure" | "pausemeasure" | "unpausemeasure"
@@ -183,6 +223,19 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
                 eprintln!("!{name}: needs a section, an option and a value");
                 return After::Nothing;
             };
+            /*  Group=Name or !SetOptionGroup: every meter, then every measure, in the group,
+                as in Rainemeter. A grooup with nothing in it is fine. */
+            if let Pick::Group(group) = Pick::read(section, by_group) {
+                for meter in skin.meters.iter_mut().filter(|m| m.in_group(&group)) {
+                    meter.set_option(key, value);
+                }
+                for switch in skin.measures.iter_mut().filter_map(|m| m.switch_mut()) {
+                    if switch.in_group(&group) {
+                        switch.set_option(key, value);
+                    }
+                }
+                return After::Nothing;
+            }
             if let Some(meter) = skin.meter_mut(section) {
                 meter.set_option(key, value);
             } else if let Some(switch) = skin.measure_switch(section) {
@@ -216,11 +269,12 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
         "redraw" => After::Redraw,
         "update" => After::Update,
         "updatemeter" | "updatemeasure" => {
-            let Some(section) = args.first().cloned() else {
+            let Some(arg) = args.first() else {
                 eprintln!("!{name}: Incorrect number of arguments");
                 return After::Nothing;
             };
-            if lower == "updatemeter" {After::UpdateMeter(section)} else { After::UpdateMeasure(section) }
+            let pick = Pick::read(arg, by_group);
+            if lower == "updatemeter" {After::UpdateMeter(pick)} else { After::UpdateMeasure(pick) }
         }
         "refresh" => After::Refresh,
         "activateconfig" | "toggleconfig" => {
@@ -442,6 +496,7 @@ mod tests {
         // and so do their group forms: the group, then the config
         assert_eq!(target("!DisableMeasureGroup clocks"), Target::This);
         assert_eq!(target("!PauseMeasureGroup Clocks Other"), config("Other"));
+        assert_eq!(target("!ToggleMeterGroup Bars Other") , config("Other"));
         // !SetOption takes three
         assert_eq!(target("!SetOption Label Text Hi"), Target::This);
         assert_eq!(target(r#"!SetOption Label Text "" Other"#), config("Other"));
@@ -533,5 +588,18 @@ mod tests {
         assert_eq!(parse_args(r#"Text "unclosed text"#), ["Text", "unclosed text"]);
         assert_eq!(parse_args("  "), ["  "]);
         assert!(parse_args("").is_empty());
+    }
+
+    #[test]
+    fn update_picks() {
+        let name = |n: &str| Pick::Name(n.to_string());
+        let group = |g: &str| Pick::Group(g.to_string());
+        assert_eq!(Pick::read("*", false), Pick::All);
+        assert_eq!(Pick::read("CPU", false), name("CPU"));
+        assert_eq!(Pick::read("Group=Bars", false), group("Bars"));
+        assert_eq!(Pick::read("Bars", true), group("Bars"));
+        assert_eq!(Pick::read("*", true), group("*")); // in a group bang, * is a group name
+        assert_eq!(target("!UpdateMeterGroup Bars Other"), Target::Config("Other".to_string()));
+        assert_eq!(target("!SetOptionGroup Bars BarColor 255,0,0 Other"), Target::Config("Other".to_string()));
     }
 }
