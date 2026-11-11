@@ -15,7 +15,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 81 / 156 ≈ **52%**
+- Roadmap checklist: 83 / 157 ≈ **53%**
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
   - X11: 4 / 7 ≈ **57%**
@@ -29,20 +29,20 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 4. [ ] Right-click menu (`ContextTitle` / `ContextAction`, and `!SetOption Rainmeter Context…`)
 5. [ ] Bang `!WriteKeyValue`
 6. [ ] Bang `!CommandMeasure`
-7. [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction`
-8. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
+7. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
+8. [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction`
 9. [ ] `IfMatch` actions
-10. [ ] `OnChangeAction`
-11. [ ] Measure option `UpdateDivider`
-12. [ ] `[Rainmeter]` `DefaultUpdateDivider` (measures first; meters once meter `UpdateDivider` is done)
-13. [ ] Measure options `Substitute` / `RegExpSubstitute`
-14. [ ] Measure option `AverageSize`
-15. [ ] Meter option `AntiAlias`
-16. [ ] Meter option `TransformationMatrix`
-17. [ ] Meter option `UpdateDivider`
-18. [ ] Meter `Container`
-19. [ ] Running programs from actions (safely, never through a shell)
-20. [ ] Measure `CPU`: `Processor=N`
+10. [ ] Measure option `UpdateDivider`
+11. [ ] `[Rainmeter]` `DefaultUpdateDivider` (measures first; meters once meter `UpdateDivider` is done)
+12. [ ] Measure options `Substitute` / `RegExpSubstitute`
+13. [ ] Measure option `AverageSize`
+14. [ ] Meter option `AntiAlias`
+15. [ ] Meter option `TransformationMatrix`
+16. [ ] Meter option `UpdateDivider`
+17. [ ] Meter `Container`
+18. [ ] Running programs from actions (safely, never through a shell)
+19. [ ] Measure `CPU`: `Processor=N`
+20. [ ] Measure `Memory`
 ---
 
 ## Skin files and variables
@@ -141,6 +141,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] Bangs: `!SetOptionGroup` (every meter, then every measure, in the group; also `!SetOption Group=Name …`; an empty value removes the option, even the one written in the file, as in Rainmeter)
 - [x] Bangs: `!Update` (restarts the Update timer), `!Redraw`
 - [x] Bangs: `!Refresh` (this skin only; reloads the file, restarts the timer, keeps the old skin on an error)
+- [x] Bangs: `!Log` (`Notice`/`Warning`/`Error`/`Debug`; prints to the terminal (stderr) in Rainmeter's log-file format, with control characters shown as `?` so a skin can't send escape codes; the Manage window's Log tab will show the same lines later)
 - [x] Bangs: `!UpdateMeter`, `!UpdateMeasure` (`*` = all; each runs its `OnUpdateAction`; no repaint until `!Redraw`, which now also resizes a `DynamicWindowSize` skin, as in Rainmeter; meters after an updated one are placed again, since relative X/Y follow it. also `!UpdateMeasureGroup` / `!UpdateMeterGroup` and `Group=Name`, where `*` is a group name)
 - [x] Bangs: `!EnableMeasure`, `!DisableMeasure`, `!ToggleMeasure`, `!PauseMeasure`, `!UnpauseMeasure`, `!TogglePauseMeasure` (seen at the next update; disabled = 0, paused = last value)
 - [x] Bangs: `!EnableMeasureGroup`, `!DisableMeasureGroup`, `!ToggleMeasureGroup`, `!PauseMeasureGroup`, `!UnpauseMeasureGroup`, `!TogglePauseMeasureGroup` (also the newer `Group=Name` form of the plain bangs, e.g. `!DisableMeasure Group=Clocks`; a group with no measures in it is silent, as in Rainmeter)
@@ -153,7 +154,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction`
 - [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
 - [ ] `IfMatch` actions
-- [ ] `OnChangeAction`
+- [x] `OnChangeAction` (on measures; fires when the value or the text changed since the last update that reached the measure; the first update only records them; not while paused or disabled; also after `!UpdateMeasure`)
 - [x] `OnUpdateAction` on meters and measures (every section reads it, Section.cpp)
 
 ## General measure options

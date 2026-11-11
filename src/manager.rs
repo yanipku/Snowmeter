@@ -783,12 +783,14 @@ impl SkinWindow {
                     return Some(None); // not picked: left as it is
                 }
                 found = true;
-                let action = crate::measure::update_one(m, values);
-                Some(Some((m.name().to_string(), action)))
+                let actions = crate::measure::update_one(m, values);
+                Some(Some((m.name().to_string(), actions)))
             });
             let Some(step) = step else { break };
-            if let Some((section, action)) = step {
-                self.run_skin_action(&section, action, &self.in_update_action);
+            if let Some((section, actions)) = step {
+                for action in actions {
+                    self.run_skin_action(&section, Some(action), &self.in_update_action);
+                }
             }
             if found && matches!(pick, Pick::Name(_)) {
                 break; // a name picks one measure: done

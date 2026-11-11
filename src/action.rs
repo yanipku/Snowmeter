@@ -5,6 +5,7 @@ use crate::formula;
 use crate::position::ZPos;
 use crate::skin::Skin;
 use crate::measure::Measure;
+use crate::log::{log, Level};
 
 // What the window has to do after a bang, since bangs can't reach the window themselves
 pub enum After {
@@ -318,6 +319,18 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
             // ParseInt again: a number or a (formula), the fraction dropped; else 0
             let int = |a: &str| formula::parse_number(a).map_or(0, |n| n as i32);
             After::Window(WindowBang::Move(int(x), int(y)))
+        }
+        "log" => {
+            // !Log "text" [Notice|Warning|Error|Debug] (Rainmeter's DoLogBang). No text: noting
+            let Some(message) = args.first() else { return After::Nothing };
+            // The source is the skin's file, like illustro\Clock\Clock.ini
+            let file = skin.file.file_name().unwrap_or_default().to_string_lossy();
+            let source = format!("{}\\{file}", skin.config);
+            match args.get(1).map_or(Some(Level::Notice), |kind| Level::parse(kind)) {
+                Some(level) => log(level, &source, message),
+                None => log(Level::Error, &source, "!Log: Invalid type"),
+            }
+            After::Nothing
         }
         _ => {
             println!("!{name} isn't supported yet");

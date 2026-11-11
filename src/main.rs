@@ -8,6 +8,7 @@ mod fonts;
 mod formula;
 mod group;
 mod ini;
+mod log;
 mod manager;
 mod measure;
 mod memory;

@@ -119,7 +119,9 @@ pub struct Switch {
     reread_once: bool,              // read the options again at the next update
     on_update: String,              // OnUpdateAction, as written
     ran: bool,                      // the last update reached the measure (not paused/disabled)
-    groups: Groups,                  // Group=, for !DisableMeasureGroup and the other group bangs
+    on_change: String,              // OnChanbeAction, as written
+    last: Option<(f64, String)>,    // value and text at the last update that reached the measure
+    groups: Groups,                 // Group=, for !DisableMeasureGroup and the other group bangs
 }
 
 impl Switch {
@@ -128,6 +130,7 @@ impl Switch {
         Switch {
              inner, disabled, paused, zeroed: false, source, vars,
              reread_once: false, on_update: String::new(), ran: false, groups: Groups::default(),
+             on_change: String::new(), last: None,
             }
     }
 
@@ -140,10 +143,13 @@ impl Switch {
         self
     }
 
-    //OnUpdateAction, with #var# filled in now and [#var] left for when it runs
+    //OnUpdateAction and OnChangeAction, with #var# filled in now and [#var] left for when it runs
     fn read_on_update(&mut self) {
         let Some(src) = &self.source else { return };
         self.on_update = src.options.get("onupdateaction")
+            .map(|v| ini::resolve(v, &self.vars))
+            .unwrap_or_default();
+        self.on_change = src.options.get("onchangeaction")
             .map(|v| ini::resolve(v, &self.vars))
             .unwrap_or_default();
     }
@@ -237,6 +243,21 @@ impl Switch {
     pub fn update_action(&self) -> Option<&str> {
         let action = self.on_update.trim();
         (self.ran && !action.is_empty()).then_some(action)
+    }
+
+    /*  OnChangeAction, if the value or the text changed since the last update that reached
+        the measure (Rainmeter's Measure::DoChangeAction). the first call only records them.
+        they'er recorded even with no action set, so one added later by !SetOption compares
+        against the last values. */
+    pub fn change_action(&mut self) -> Option<String> {
+        if !self.ran {
+            return None;
+        }
+        let now = (self.value(), self.text());
+        let changed = self.last.as_ref().is_some_and(|last| *last != now);
+        self.last = Some(now);
+        let action = self.on_change.trim();
+        (changed && !action.is_empty()).then(|| action.to_string())
     }
 }
 
@@ -422,12 +443,16 @@ pub fn update_all(measures: &mut [Box<dyn Measure>]) -> Values {
     values
 }
 
-/* Updates one measure, puts its fresh value into 'value', and returns its OnUpdateAction
-   if this update should run it (copied, so the caller can let go of the skin first) */
-pub fn update_one(m: &mut Box<dyn Measure>, values: &mut Values) -> Option<String> {
+/*  Updates one measure, puts its fresh value into 'value', and returns the action this
+    update should run: OnUpdateAction, then OnChangeActin (copied, so the caller can let
+    go of the skin first) */
+pub fn update_one(m: &mut Box<dyn Measure>, values: &mut Values) -> Vec<String> {
     m.update_with(values);
     values.insert(m.name().to_lowercase(), sample_of(&**m));
-    m.switch_mut().and_then(|s| s.update_action()).map(str::to_string)
+    let Some(s) = m.switch_mut() else { return Vec::new() };
+    let mut actions: Vec<String> = s.update_action().map(str::to_string).into_iter().collect();
+    actions.extend(s.change_action());
+    actions
 }
 
 #[cfg(test)]
@@ -536,5 +561,24 @@ mod tests {
         s.set_option("Group", "Fast");
         s.update();
         assert!(s.in_group("Fast") && !s.in_group("Clocks"));
+    }
+
+    #[test]
+    fn change_action_fires_only_on_change() {
+        let mut options = HashMap::new();
+        options.insert("onchangeaction".to_string(), "[!Log changed]".to_string());
+        let section = Section { name: "Count".to_string(), options };
+        let mut s = Switch::new(Box::new(Count(0.0)), false, false).with_source(&section, &HashMap::new());
+        // The first update only records the value
+        s.update();
+        assert_eq!(s.change_action(), None);
+        // the count went up: the cation runs
+        s.update();
+        assert_eq!(s.change_action().as_deref(), Some("[!Log changed]"));
+        // Asked again with no new update: nothing changed
+        assert_eq!(s.change_action(), None);
+        s.set_paused(true);
+        s.update();
+        assert_eq!(s.change_action(), None);
     }
 }
