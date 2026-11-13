@@ -91,10 +91,17 @@ pub trait Measure {
         None
     }
 
-    // Reads the measure's own options again, after !SetOption changed one (Rainmeter's
-    // ReadOptions). The measure itself stays, so its state (a CPU sample, a Calc counter)
-    // carries on. Default: the measure has no options of its own.
+    /*  Reads the measure's own options again, after !SetOption changed one (Rainmeter's
+        ReadOptions). The measure itself stays, so its state (a CPU sample, a Calc counter)
+        carries on. Default: the measure has no options of its own. */
     fn reread(&mut self, _section: &Section, _vars: &HashMap<String, String>) {}
+
+    /*  !CommandMeasure: the measure does someting with the command text, like a script
+        measure running Lua. Most measure take no commands (Rainmeter's Measure::Command
+        logs "Not supported"), so the default says so; the bang logs it as a warning. */
+    fn command(&mut self, _command: &str) -> Result<(), String> {
+        Err("Not supported".to_string())
+    }
 
     // The Disabled/Paused state, for the bangs that change it. Only Switch has one;
     // skin::load wraps every measure in a Switch, so through the skin this is always Some.
@@ -297,6 +304,11 @@ impl Measure for Switch {
         if self.zeroed { None } else { self.inner.timestamp() }
     }
 
+    // Even a disabled or paused get the command, as in Rainmeter
+    fn command(&mut self, command: &str) -> Result<(), String> {
+        self.inner.command(command)
+    }
+
     fn switch_mut(&mut self) -> Option<&mut Switch> {
         Some(self)
     }
@@ -414,6 +426,10 @@ impl Measure for Ranged {
 
     fn timestamp(&self) -> Option<f64> {
         self.inner.timestamp()
+    }
+
+    fn command(&mut self, command: &str) -> Result<(), String> {
+        self.inner.command(command)
     }
 
     fn reread(&mut self, section: &Section, vars: &HashMap<String, String>) {

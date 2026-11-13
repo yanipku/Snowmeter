@@ -22,6 +22,7 @@ mod skin;
 mod textfile;
 mod tooltip;
 mod wlpos;
+mod writekey;
 mod x11pos;
 
 use gtk4::prelude::*;

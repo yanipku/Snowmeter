@@ -15,7 +15,8 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 83 / 157 ≈ **53%**
+- Roadmap checklist: 85 / 158 ≈ **54%**
+- Translations: 0 / 39 = **0%** (the Language Support list; not part of the checklist)
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
   - X11: 4 / 7 ≈ **57%**
@@ -26,23 +27,23 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 1. [ ] Remember each skin's position and settings (our own Rainmeter.ini; Wayland limits window placement)
 2. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
 3. [ ] `[Rainmeter]` `Blur` / `BlurRegion`
-4. [ ] Right-click menu (`ContextTitle` / `ContextAction`, and `!SetOption Rainmeter Context…`)
-5. [ ] Bang `!WriteKeyValue`
-6. [ ] Bang `!CommandMeasure`
-7. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
-8. [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction`
-9. [ ] `IfMatch` actions
-10. [ ] Measure option `UpdateDivider`
-11. [ ] `[Rainmeter]` `DefaultUpdateDivider` (measures first; meters once meter `UpdateDivider` is done)
-12. [ ] Measure options `Substitute` / `RegExpSubstitute`
-13. [ ] Measure option `AverageSize`
-14. [ ] Meter option `AntiAlias`
-15. [ ] Meter option `TransformationMatrix`
-16. [ ] Meter option `UpdateDivider`
-17. [ ] Meter `Container`
-18. [ ] Running programs from actions (safely, never through a shell)
-19. [ ] Measure `CPU`: `Processor=N`
-20. [ ] Measure `Memory`
+4. [ ] Right-click menu (`ContextTitle` / `ContextAction`, and `!SetOption Rainmeter Context…`). Start the `tr()` text lookup here: the first text to translate, with Rainmeter's section/key names (`[RainmeterMenu]`, `[SkinMenu]`)
+5. [ ] Task (not a feature): send every log message through `log::log` (as `!Log` does) instead of `eprintln!`/`println!`, so each has a level (ERRO/WARN/NOTE/DBUG) and a source, and the Manage window's Log tab can show them all. The source comes from the current skin (`with_skin`/`SkinInfo`); command-line output (`--list`, usage) stays `println!`; messages stay English, as in Rainmeter. One file per step
+6. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
+7. [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction`
+8. [ ] `IfMatch` actions
+9. [ ] Measure option `UpdateDivider`
+10. [ ] `[Rainmeter]` `DefaultUpdateDivider` (measures first; meters once meter `UpdateDivider` is done)
+11. [ ] Measure options `Substitute` / `RegExpSubstitute`
+12. [ ] Measure option `AverageSize`
+13. [ ] Meter option `AntiAlias`
+14. [ ] Meter option `TransformationMatrix`
+15. [ ] Meter option `UpdateDivider`
+16. [ ] Meter `Container`
+17. [ ] Running programs from actions (safely, never through a shell)
+18. [ ] Measure `CPU`: `Processor=N`
+19. [ ] Measure `Memory`
+20. [ ] Measure `SwapMemory`
 ---
 
 ## Skin files and variables
@@ -107,6 +108,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [ ] Skins tab: skin info from `[Metadata]` (Name, Author, Version, License, Information)
 - [ ] Layouts tab: save and load layouts (which skins are loaded, and where)
 - [ ] Settings tab: skins folder, text editor, logging
+- [ ] Settings tab: language support (pick the language; the app's text read from the language files, right-to-left for Arabic and Hebrew; the languages themselves are listed under Language Support)
 - [ ] Log / About window: messages and errors, loaded skins, version
 - [ ] Start Snowmeter at login (an XDG autostart `.desktop` file)
 
@@ -134,7 +136,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] Scroll actions (`MouseScrollUpAction`, `MouseScrollDownAction`, `MouseScrollLeftAction`, `MouseScrollRightAction`; one action per wheel step, chosen like a click: top meter under the mouse, else `[Rainmeter]`; touchpad moves are added up into steps. Up/down tested; left/right and touchpad untested (no hardware). A `ClickThrough` skin gets no scrolls)
 - [x] `ToolTipText`, `ToolTipTitle`, `ToolTipIcon`, `ToolTipWidth`, `ToolTipType`, `ToolTipHidden` (on every meter type; the top visible meter under the mouse with its tooltip on wins; `%1`… stay live while it shows; `[Rainmeter] ToolTipHidden` is the default for meters. Laid out like Windows: icon + bold title, then the text wrapped at `ToolTipWidth`. Stock icons map to theme icons (`dialog-information`, …); an icon file is loaded once when the meter is built. Differences: `ToolTipType=1` (balloon) draws as a normal tooltip; a `ClickThrough` skin gets no tooltips; in WSLg it hides about 1 s after leaving the meter, to re-check on a real desktop)
 - [x] Bangs: `!SetVariable` (formula values; `[#Var]` in actions is read at click time)
-- [ ] Bangs: `!WriteKeyValue`
+- [x] Bangs: `!WriteKeyValue` (Section Key Value [File], as Rainmeter: the file must already exist and be inside the skins or settings folder, `../` is refused, a read-only file gives a warning, `(formula)` values are worked out, the file keeps its encoding, the skin isn't reloaded. Differences: symlinks are followed before the folder check; line breaks in a name or value are refused; new lines use the file's own line endings; a new key goes after any comment right under the section's last key, but before comments that follow a blank line (Rainmeter puts it after all of them))
 - [x] Bangs: `!ShowMeter`, `!HideMeter`, `!ToggleMeter` (take effect at the next update, as in Rainmeter)
 - [x] Bangs: `!ShowMeterGroup`, `!HideMeterGroup`, `!ToggleMeterGroup` (also `!ShowMeter Group=Name` and the like; a toggle flips each meter on its own; a group with no meters in it is silent, as in Rainmeter)
 - [x] Bangs: `!SetOption` on meters and measures (read again at the next update, as in Rainmeter; a measure keeps its state, such as the Calc counter). `[Rainmeter]` (`ContextTitle`/`ContextAction`) waits for the right-click menu
@@ -145,7 +147,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] Bangs: `!UpdateMeter`, `!UpdateMeasure` (`*` = all; each runs its `OnUpdateAction`; no repaint until `!Redraw`, which now also resizes a `DynamicWindowSize` skin, as in Rainmeter; meters after an updated one are placed again, since relative X/Y follow it. also `!UpdateMeasureGroup` / `!UpdateMeterGroup` and `Group=Name`, where `*` is a group name)
 - [x] Bangs: `!EnableMeasure`, `!DisableMeasure`, `!ToggleMeasure`, `!PauseMeasure`, `!UnpauseMeasure`, `!TogglePauseMeasure` (seen at the next update; disabled = 0, paused = last value)
 - [x] Bangs: `!EnableMeasureGroup`, `!DisableMeasureGroup`, `!ToggleMeasureGroup`, `!PauseMeasureGroup`, `!UnpauseMeasureGroup`, `!TogglePauseMeasureGroup` (also the newer `Group=Name` form of the plain bangs, e.g. `!DisableMeasure Group=Clocks`; a group with no measures in it is silent, as in Rainmeter)
-- [ ] Bangs: `!CommandMeasure`
+- [x] Bangs: `!CommandMeasure`, `!CommandMeasureGroup` (and `Group=Name`; the measure gets the command even when disabled or paused, as in Rainmeter; the old one-argument form `"Measure Command"` is split at the first space with a warning. No measure takes commands yet: each says `Not supported` until Loop, Script or a plugin adds its own)
 - [x] Bangs: `!Move` (plain pixel numbers from the primary monitor; KeepOnScreen applies, as in Rainmeter)
 - [x] Bangs for the window settings: `!ZPos`, `!Draggable`, `!ClickThrough`, `!KeepOnScreen`, `!SnapEdges` (1, 0, or -1 to toggle; the new value is saved to the settings file)
 - [x] Bangs: `!ActivateConfig`, `!DeactivateConfig`, `!ToggleConfig`
@@ -258,3 +260,45 @@ A `.rmskin` is a ZIP file with a short "RMSKIN" footer at the end and an `RMSKIN
 - [ ] `LoadType` / `Load`: load the skin or layout after installing
 - [ ] Installer window: show what's in the package, then Install / Cancel
 - [ ] Open `.rmskin` files by double-clicking them (a `.desktop` file and a MIME type)
+
+## Language Support
+The languages in Rainmeter's Manage window (Settings tab), named as it shows them; the last three are only in the source (`Language/*.ini`), not in the released Rainmeter. Arabic and Hebrew are right-to-left. They count in the Translations line, not in the checklist.
+- [ ] Arabic - العربية (المملكة العربية السعودية)
+- [ ] Bulgarian - български (България)
+- [ ] Chinese (Simplified) - 中文(中国)
+- [ ] Chinese (Traditional) - 中文(台灣)
+- [ ] Czech - čeština (Česko)
+- [ ] Danish - dansk (Danmark)
+- [ ] Dutch - Nederlands (Nederland)
+- [ ] English - English (United States)
+- [ ] Estonian - eesti (Eesti)
+- [ ] Finnish - suomi (Suomi)
+- [ ] French - français (France)
+- [ ] German - Deutsch (Deutschland)
+- [ ] Greek - Ελληνικά (Ελλάδα)
+- [ ] Hebrew - עברית (ישראל)
+- [ ] Hungarian - magyar (Magyarország)
+- [ ] Indonesian - Indonesia (Indonesia)
+- [ ] Italian - italiano (Italia)
+- [ ] Japanese - 日本語 (日本)
+- [ ] Korean - 한국어(대한민국)
+- [ ] Malay - Melayu (Malaysia)
+- [ ] Norwegian Bokmål - norsk bokmål (Norge)
+- [ ] Polish - polski (Polska)
+- [ ] Portuguese - português (Brasil)
+- [ ] Portuguese - português (Portugal)
+- [ ] Romanian - română (România)
+- [ ] Russian - русский (Россия)
+- [ ] Serbian (Cyrillic) - српски (Србија и Црна Гора (Бивша))
+- [ ] Serbian (Latin) - srpski (Srbija i Crna Gora (Bivša))
+- [ ] Slovak - slovenčina (Slovensko)
+- [ ] Slovenian - slovenščina (Slovenija)
+- [ ] Spanish - español (España, alfabetización internacional)
+- [ ] Swedish - svenska (Sverige)
+- [ ] Thai - ไทย (ไทย)
+- [ ] Turkish - Türkçe (Türkiye)
+- [ ] Ukrainian - українська (Україна)
+- [ ] Vietnamese - Tiếng Việt (Việt Nam)
+- [ ] Croatian (source only)
+- [ ] Latvian (source only)
+- [ ] Lithuanian (source only)

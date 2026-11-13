@@ -6,6 +6,8 @@ use crate::position::ZPos;
 use crate::skin::Skin;
 use crate::measure::Measure;
 use crate::log::{log, Level};
+use crate::{paths, textfile, writekey};
+use std::path::Path;
 
 // What the window has to do after a bang, since bangs can't reach the window themselves
 pub enum After {
@@ -92,6 +94,7 @@ fn arg_count(bang: &str) -> Option<usize> {
         "setvariable" | "move" => Some(2),
         "setoption" => Some(3),
         "setoptiongroup" => Some(3),
+        "commandmeasure" | "commandmeasuregroup" => Some(2),
         _ => None,
     }
 }
@@ -146,7 +149,7 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
     let (lower, by_group) = match lower.strip_suffix("group") {
         Some(base @ ("enablemeasure" | "disablemeasure" | "togglemeasure" | "pausemeasure"
             | "unpausemeasure" | "togglepausemeasure" | "showmeter" | "hidemeter"
-            | "togglemeter" | "updatemeter" | "updatemeasure" | "setoption")) => (base.to_string(), true),
+            | "togglemeter" | "updatemeter" | "updatemeasure" | "setoption" | "commandmeasure")) => (base.to_string(), true),
         _ => (lower, false),
     };
     match lower.as_str() {
@@ -218,6 +221,47 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
                 eprintln!("!{name}: [{measure_name}] not found");
             }
             After::Nothing // like Rainmeter: seen at the next update
+        }
+        "commandmeasure" => {
+            // !CommandMeasure Measure "Command" [Config] (Rainmeter's Skin::CommandMeasure)
+            let source = log_source(skin);
+            let mut args =args;
+            /*  Old skins put both in one argument: !CommandMeasure "Measure Command".
+                Rainmeter splits it at the first space and warns (CommandHandler.cpp DoBang). */
+            if let [only] = args.as_slice()
+                && let Some((measure, command)) = only.split_once(' ')
+            {
+                log(Level::Warning, &source, &format!("!{name}: Two parameters required, only one given"));
+                args = vec![measure.to_string(), command.to_string()];
+            }
+            let [measure_name, command, ..] = args.as_slice() else {
+                log(Level::Error, &source, &format!("!{name}: Incorrect number of arguments"));
+                return After::Nothing;
+            };
+            // Group=Name work like the group bang, as in other measure bangs
+            let (wanted, by_group) = match measure_name.strip_prefix("Group=") {
+                Some(group) => (group, true),
+                None => (measure_name.as_str(), by_group),
+            };
+            let mut found = false;
+            for switch in skin.measures.iter_mut().filter_map(|m| m.switch_mut()) {
+                let hit = if by_group { switch.in_group(wanted) } else { switch.name().eq_ignore_ascii_case(wanted) };
+                if !hit {
+                    continue;
+                }
+                // the measure's own answer, like "Not supported", is a warning
+                if let Err(text) = switch.command(command) {
+                    log(Level::Warning, &source, &format!("!CommandMeasure: {text}"));
+                }
+                found = true;
+                if !by_group {
+                    break; //a name picks one measure
+                }
+            }
+            if !found && !by_group {
+                log(Level::Warning, &source, &format!("!Command: [{measure_name}] not found"));
+            }
+            After::Nothing
         }
         "setoption" => {
             let [section, key, value, ..] = args.as_slice() else {
@@ -323,12 +367,23 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
         "log" => {
             // !Log "text" [Notice|Warning|Error|Debug] (Rainmeter's DoLogBang). No text: noting
             let Some(message) = args.first() else { return After::Nothing };
-            // The source is the skin's file, like illustro\Clock\Clock.ini
-            let file = skin.file.file_name().unwrap_or_default().to_string_lossy();
-            let source = format!("{}\\{file}", skin.config);
+            let source = log_source(skin);
             match args.get(1).map_or(Some(Level::Notice), |kind| Level::parse(kind)) {
                 Some(level) => log(level, &source, message),
                 None => log(Level::Error, &source, "!Log: Invalid type"),
+            }
+            After::Nothing
+        }
+        "writekeyvalue" => {
+            // !WriteKeyValue Section Key Value [File] (Rainmeter's DoWriteKeyValueBang)
+            let source = log_source(skin);
+            let [section, key, value, rest @ ..] = args.as_slice() else {
+                log(Level::Error, &source, "!WriteKeyValue: Invalid parameters");
+                return After::Nothing;
+            };
+            let file = rest.first().map(String::as_str);
+            if let Err((level, text)) = write_key_value(skin, section, key, value, file) {
+                log(level, &source, &format!("!WriteKeyValue: {text}"));
             }
             After::Nothing
         }
@@ -448,7 +503,7 @@ fn parse_args(text: &str) -> Vec<String> {
     args
 }
 
-// The value !SetVariable stores. Like Rainmeter's Skin::SetVariable, a value in
+// The value !SetVariable and !WriteKeyValue stores. Like Rainmeter's Skin::SetVariable, a value in
 // parentheses is a formula: its result is written with 5 decimals, trailing zeros
 // removed ("3.50000" -> "3.5", "2.00000" -> "2"). Anything else, or a formula with
 // an error, is stored as written.
@@ -463,10 +518,49 @@ fn variable_value(value: &str) -> String {
             if text == "-0" { "0".to_string() } else { text.to_string() }
         }
         Err(e) => {
-            eprintln!("!SetVariable: formula {value}: {e}");
+            eprintln!("&formula: {e}: {value}");
             value.to_string()
         }
     }
+}
+
+// The log source fora skin's messages: its config and file, like illustro\Clock\Clock.ini
+fn log_source(skin: &Skin) -> String {
+    let file = skin.file.file_name().unwrap_or_default().to_string_lossy();
+    format!("{}\\{file}", skin.config)
+}
+
+/*  !WriteKeyValue, following Rainmeter's DoWriteKeyValueBang: the file must already
+    exist, be inside the skins folder or the settings folder, and not be read-only.
+    Errors come back as (level, message) for the log. */
+fn write_key_value(skin: &Skin, section: &str, key: &str, value: &str, file: Option<&str>)
+    -> Result<(), (Level, String)> {
+    let error = |text: String| (Level::Error, text);
+    let path = match file {
+        None => skin.file.clone(),
+        Some(name) => {
+            if name.contains("../") || name.contains("..\\") {
+                return Err(error(format!("Illegal path: {name}")));
+            }
+            let base = skin.file.parent().unwrap_or(&skin.skins_root.as_path());
+            paths::find_file(base, name).ok_or_else(|| error(format!("File not found: {name}")))?
+        }
+    };
+    // canonicalize follows symlinks and removes "." parts, so the check below sees the real place
+    let real = path.canonicalize().map_err(|_| error(format!("File not found: {}", path.display())))?;
+    let inside = |dir: &Path| dir.canonicalize().is_ok_and(|d| real.starts_with(d));
+    if !inside(&skin.skins_root) && !inside(&skin.settings_dir) {
+        return Err(error(format!("Illegal path: {}", real.display())));
+    }
+    if real.metadata().is_ok_and(|m| m.permissions().readonly()) {
+        return Err((Level::Warning, format!("File is read only: {}", real.display())));
+    }
+    if [section, key, value].iter().any(|s| s.contains(['\r', '\n', '\0'])) {
+        return Err(error(format!("Failed to write to: {} (line breaks can't be written)", real.display())));
+    }
+    let (text, kind) = textfile::read_text_kind(&real).map_err(error)?;
+    let text = writekey::write_key(&text, section, key, &variable_value(value));
+    textfile::write_text(&real, &text, kind).map_err(error)
 }
 
 #[cfg(test)]
@@ -510,6 +604,9 @@ mod tests {
         assert_eq!(target("!DisableMeasureGroup clocks"), Target::This);
         assert_eq!(target("!PauseMeasureGroup Clocks Other"), config("Other"));
         assert_eq!(target("!ToggleMeterGroup Bars Other") , config("Other"));
+        // !CommantMeasure take two: the measure and the command
+        assert_eq!(target(r#"!CommandMeasure Script "Run()" Other"#), config("Other"));
+        assert_eq!(target(r#"!CommandMeasureGroup Scripts "Run()" Other"#), config("Other"));
         // !SetOption takes three
         assert_eq!(target("!SetOption Label Text Hi"), Target::This);
         assert_eq!(target(r#"!SetOption Label Text "" Other"#), config("Other"));
