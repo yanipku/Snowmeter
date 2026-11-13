@@ -1,5 +1,6 @@
 use crate::group::Groups;
 use crate::ini;
+use crate::log::{section_log, Level};
 use crate::measure::{number_option, Measure, Ranged, Switch};
 use crate::meter::{self, Layout, Meter};
 use crate::mouse::{MouseActions, MouseEvent};
@@ -10,6 +11,7 @@ use crate::{calc, clock, cpu, fonts, formula, memory};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
+    rc::Rc,
 };
 // What [Rainmeter] paints behind the meters (BackgroundMode; None = mode 1, nothing)
 pub enum Background {
@@ -106,6 +108,7 @@ pub struct Skin {
     pub skins_root: PathBuf,                // what load() needs to read the skin again for !Refresh
     pub settings_dir: PathBuf,
     pub config: String,                     // the config name, like illustro\Clock (#CURRENTCONFIG#)
+    pub source: Rc<str>,                    // the log source: config and file, like illustro\Clock\Clock.ini
     pub groups: Groups,                     // Group= of [Rainmeter]; the manager adds the settins file's
     pub tooltip_hidden: bool,               // [Rainmeter] ToolTipHidden: the default for meters that don't set their own
 }
@@ -235,16 +238,13 @@ fn apply_meter_styles(
         // in `names`, so they can be counted below without ever being stored
         for name in names.by_ref().take(MAX_STYLES) {
             let Some(parent) = index.get(&name.to_lowercase()) else {
-                eprintln!("[{}] MeterStyle '{}' not found, ignoring it", section.name, name);
+                section_log(Level::Error, &section.name, &format!("MeterStyle '{name}' not found, ignoring it"));
                 continue;
             };
             let reserved = parent.name.eq_ignore_ascii_case("rainmeter")
                 || parent.name.eq_ignore_ascii_case("variables");
             if reserved || parent.options.contains_key("measure") {
-                eprintln!(
-                    "[{}] '{}' can't be used as a MeterStyle, ignoring it",
-                    section.name, name
-                );
+                section_log(Level::Error, &section.name, &format!("'{name}' can't be used as a MeterStyle, ignoring it",));
                 continue;
             }
             for (k, v) in &parent.options {
@@ -256,10 +256,7 @@ fn apply_meter_styles(
         }
         let extra = names.count();
         if extra > 0 {
-            eprintln!(
-                "[{}] MeterStyle lists {} styles too many, only the first {} are used",
-                section.name, extra, MAX_STYLES
-            );
+            section_log(Level::Warning, &section.name, &format!("MeterStyle lists {extra} styles too many, only the first {MAX_STYLES} are used"));
         }
     }
 
@@ -271,6 +268,12 @@ fn apply_meter_styles(
     }
 
     ini::Section { name: section.name.clone(), options }
+}
+
+// The log source for a skin: its config and file name, like illustro\Clock\Clock.ini
+pub fn log_source(config: &str, file: &Path) -> Rc<str> {
+    let name = file.file_name().unwrap_or_default().to_string_lossy();
+    format!("{config}\\{name}").into()
 }
 
 // Both paths must be absolute (canonical), so the folder math below is reliable
@@ -367,10 +370,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
             "time" => Box::new(clock::TimeMeasure::from_options(section, &vars)),
             "calc" => Box::new(calc::CalcMeasure::from_options(section, &vars)),
             other => {
-                eprintln!(
-                    "[{}] unsupported measure type '{}', skipping",
-                    section.name, other
-                );
+                section_log(Level::Error, &section.name, &format!("unsupported measure type '{other}', skipping"));
                 continue;
             }
         };
@@ -475,7 +475,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         0 | 3 | 4 => get("background").filter(|n| !n.trim().is_empty()).and_then(|name|{
             let image = meter::load_image(&name, &base_dir, None, None);
             if image.is_none() {
-                eprintln!("Background image {name} couldn't be loaded");
+                section_log(Level::Error, "Rainmeter", &format!("Background image {name} couldn't be loaded"));
             }
             image.map(|p| match mode {
                 3 => Background::Scaled(p, background_margins),
@@ -515,6 +515,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
     let on_unfocus = action("onunfocusaction");
 
     let (width, height) = window_size(&meters, &measures, fixed_size, background.as_ref(), background_margins);
+    let source = log_source(&config, skin_file);
     Ok(Skin {
         measures,
         meters,
@@ -539,6 +540,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         skins_root: skins_root.to_path_buf(),
         settings_dir: settings_dir.to_path_buf(),
         config,
+        source,
         groups,
         tooltip_hidden,
     })

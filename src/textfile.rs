@@ -2,6 +2,7 @@ use encoding_rs::{Encoding, UTF_16LE, UTF_8, WINDOWS_1252};
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
+use crate::log::{skin_log, Level};
 
 // Real skins are a few KB. Refusing huge files stops a hostile "skin"
 // from making the program load gigabytes into memory.
@@ -45,11 +46,7 @@ fn decode(bytes: &[u8], path: &Path) -> (String, Kind) {
     if let Some((encoding, bom_len)) = Encoding::for_bom(bytes) {
         let (text, had_errors) = encoding.decode_without_bom_handling(&bytes[bom_len..]);
         if had_errors {
-            eprintln!(
-                "{}: some characters were not valid {} and were replaced",
-                path.display(),
-                encoding.name()
-            );
+            skin_log(Level::Warning, &format!("{}: some characters were not valid {} and were replaced", path.display(), encoding.name()));
         }
         let kind = if encoding == UTF_8 {
             Kind::Utf8 { bom: true }

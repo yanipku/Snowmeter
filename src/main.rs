@@ -25,6 +25,7 @@ mod wlpos;
 mod writekey;
 mod x11pos;
 
+use crate::log::{log, Level};
 use gtk4::prelude::*;
 use gtk4::{glib, Application};
 use std::{
@@ -91,7 +92,7 @@ fn fall_back_to_xwayland() {
     let exe = env::current_exe().unwrap_or_else(|e| fail(&format!("Can't find Snowmeter itself: {e}")));
     // exec() only returns if starting the new copy failed
     let err = Command::new(exe).args(env::args_os().skip(1)).env("GDK_BACKEND", "x11").exec();
-    eprintln!("Can't restart with X11 ({err}); skins will be plain Wayland windows");
+    log(Level::Warning, "", &format!("Can't restart with X11 ({err}); skins will be plain Wayland windows"));
 }
 
 // For the startup message
@@ -166,13 +167,13 @@ fn main() -> glib::ExitCode {
     // Start GTK now, so loading the skins can read the monitors (#SCREENAREAWIDTH# and others)
     gtk4::init().unwrap_or_else(|e| fail(&format!("Can't start GTK: {e}")));
     fall_back_to_xwayland();
-    println!("Backend: {}", backend_name());
+    log(Level::Notice, "", &format!("Backend: {}", backend_name()));
     // A skin with an error is reported and skipped, as Rainmeter does; the others still run
     let mut skins = Vec::new();
     for (name, file) in files {
         match file.and_then(|file| manager::load_skin(&file, &root, &cfg)) {
             Ok(skin) => skins.push(skin),
-            Err(e) => eprintln!("{name}: {e}"),
+            Err(e) => log(Level::Error, "", &format!("{name}: {e}")),
         }
     }
     if skins.is_empty() {
@@ -189,7 +190,7 @@ fn main() -> glib::ExitCode {
     for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
         let manager = manager.clone();
         glib_unix::unix_signal_add_local_once(signal, move || {
-            println!("Signal {signal}: closing the skins");
+            log(Level::Notice, "", &format!("Signal {signal}: closing the skins"));
             manager.quit();
         });
     }

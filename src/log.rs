@@ -3,6 +3,9 @@
         NOTE (21:05:03.120) illustro\Clock\Clock.ini: text
     The Manage window's Log tab will show the same lines once it exists. */
 
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Level {
     Error,
@@ -37,6 +40,35 @@ impl Level {
 pub fn log(level: Level, source: &str, message: &str) {
     let time = chrono::Local::now().format("%H:%M:%S%.3f");
     eprintln!("{} ({time}) {}: {}", level.tag(), safe(source), safe(message));
+}
+
+thread_local! {
+    /*  the skin begin worked on, as a log source (illustro\Clock\Clock.inn); empty when none.
+        GTK runs on one thread, so a thread_local is enough (as in dollarvar.rs). */
+    static SOURCE: RefCell<Rc<str>> = RefCell::new(Rc::from(""));
+}
+
+// Runs 'f' with 'source' as the skin whose messages skin_log() writes
+pub fn with_source<R>(source: &Rc<str>, f: impl FnOnce() -> R) -> R {
+    let old = SOURCE.replace(Rc::clone(source));
+    let result = f();
+    SOURCE.set(old);
+    result
+}
+
+/*  Logs a message from the skin being worked on, for code that doesn't know its skin
+    (measures, meters, formulas) */
+pub fn skin_log(level: Level, message: &str) {
+    SOURCE.with_borrow(|source| log(level, source, message));
+}
+
+/*  Logs a message about one section of the skin being worked on. Like Rainmeter, the
+    section goes in the source: illustro\Clock\Clock.ini - [MeterTime] */
+pub fn section_log(level: Level, section: &str, message: &str) {
+    SOURCE.with_borrow(|source| {
+        let full = if source.is_empty() {format!("[{section}]") } else { format!("{source} - [{section}]") };
+        log(level, &full, message);
+    });
 }
 
 /*  Control characters become '?', so a skin can't send escape code to the terminal

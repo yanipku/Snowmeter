@@ -1,4 +1,5 @@
 use crate::ini::Ini;
+use crate::log::{log, Level};
 use crate::paths;
 use crate::position::{Options, ZPos};
 use crate::sectionvar::leading_int;
@@ -70,10 +71,7 @@ fn configured_dir(cfg: &Config) -> Option<PathBuf> {
     let path = expand_home(&value);
     if !path.is_absolute() {
         // A Windows path like C:\Users\...\Skins\ also lands here
-        eprintln!(
-            "{}: SkinPath must be an absolute path (or start with ~/), ignoring it",
-            cfg.file.display()
-        );
+        log(Level::Warning, "", &format!("{}: SkinPath must be an absolute path (or start with ~/), ignoring it", cfg.file.display()));
         return None;
     }
     Some(path)

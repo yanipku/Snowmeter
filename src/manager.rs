@@ -7,6 +7,7 @@ use crate::config::{self, Config, SkinSettings};
 use crate::meter;
 use crate::mouse::{MouseEvent, Press};
 use crate::skin::{self, Skin};
+use crate::log::{log, Level};
 use gtk4::prelude::*;
 use gtk4::{gdk, glib, Application, ApplicationWindow, DrawingArea};
 use std::cell::{Cell, RefCell};
@@ -34,7 +35,8 @@ pub fn load_skin(file: &Path, skins_root: &Path, cfg: &Config) -> Result<Skin, S
     let rects = crate::monitors::monitor_rects();
     let (x, y) = crate::position::resolve(&settings.position, (0, 0), &rects);
     let info = SkinInfo { x, y, w: 0, h: 0, z: settings.z };
-    crate::dollarvar::with_skin(info, || skin::load(file, skins_root, &cfg.dir))
+    let source = skin::log_source(&config, file);
+    crate::log::with_source(&source, || crate::dollarvar::with_skin(info, || skin::load(file, skins_root, &cfg.dir)))
 }
 
 // ClickThrough: an empty input region, so the mouse goes to the window behind.
@@ -72,7 +74,7 @@ impl Manager {
             self.save_active(&skin.config, i + 1);
             // and, like Rainmeter, write any window setting the file doesn't have yet
             if let Err(e) = config::save_missing_settings(&self.cfg, &skin.config, &settings) {
-                eprintln!("Can't save the skin's settings: {e}");
+                log(Level::Error, &skin.source, &format!("Can't save the skin's settings: {e}"));
             }
         }
         let rects = crate::monitors::monitor_rects();
@@ -128,7 +130,7 @@ impl Manager {
     // A failure is only reported: the skin itself keeps running.
     fn save_active(&self, config: &str, index: usize) {
         if let Err(e) = config::save_active(&self.cfg, config, index) {
-            eprintln!("Can't save the loaded skins: {e}");
+            log(Level::Error, "", &format!("Can't save the loaded skins: {e}"));
         }
     }
 
@@ -140,7 +142,7 @@ impl Manager {
         let rects = crate::monitors::monitor_rects();
         let (x, y) = crate::position::to_options(&opts, pos, size, &rects);
         if let Err(e) = config::save_position(&self.cfg, config, &x, &y) {
-            eprintln!("Can't save the skin's position: {e}");
+            log(Level::Error, "", &format!("Can't save the skin's position: {e}"));
         }
     }
 
@@ -218,7 +220,7 @@ impl Manager {
             }
         };
         if let Err(e) = result {
-            eprintln!("Config bang: {e}");
+            log(Level::Error, "", &format!("Config bang: {e}"));
         }
     }
 
@@ -596,7 +598,7 @@ impl SkinWindow {
         let Some(manager) = self.manager.upgrade() else { return };
         let config = self.skin.borrow().config.clone();
         if let Err(e) = config::save_setting(&manager.cfg, &config, key, &value) {
-            eprintln!("Can't save {key}: {e}");
+            self.log(Level::Error, &format!("Can't save {key}: {e}"));
         }
     }
 
@@ -620,7 +622,7 @@ impl SkinWindow {
         // in the old form
         self.saved_position.set(Some(pos));
         if let Err(e) = config::save_position(&manager.cfg, &config, &opts.x, &opts.y) {
-            eprintln!("Can't save the skin's position: {e}");
+            self.log(Level::Error, &format!("Can't save the skin's position: {e}"));
         }
     }
 
@@ -677,6 +679,18 @@ impl SkinWindow {
         let pos = crate::wlpos::position(&self.window).or_else(|| crate::x11pos::position(&self.window));
         let (x, y) = pos.or(self.saved_position.get()).unwrap_or((0, 0));
         SkinInfo { x, y, w, h, z: self.z.get() }
+    }
+
+    /*  Runs 'f' as this skin's work: [$Skin] variables describe this window, and
+        messages from log::skin_log() name this skin */
+    fn as_skin<R>(&self, f: impl FnOnce() -> R) -> R {
+        let source = self.skin.borrow().source.clone();
+        crate::log::with_source(&source, || crate::dollarvar::with_skin(self.info(), f))
+    }
+
+    // log a message with this skin as source
+    fn log(&self, level: Level, message: &str) {
+        log(level, &self.skin.borrow().source, message);
     }
 
     // The skin's width and height
@@ -771,7 +785,7 @@ impl SkinWindow {
         let mut i = 0;
         loop {
             // [%Skin] and the others, in dynamic options, describe this skin
-            let step = crate::dollarvar::with_skin(self.info(), || {
+            let step = self.as_skin(|| {
                 let mut s = self.skin.borrow_mut();
                 let m = s.measures.get_mut(i)?; // None: past the last one (or a !Refresh shrank the list)
                 let picked = match pick {
@@ -812,7 +826,7 @@ impl SkinWindow {
         };
         let mut i = 0;
         loop {
-            let step = crate::dollarvar::with_skin(self.info(), || {
+            let step = self.as_skin(|| {
                 let mut guard = self.skin.borrow_mut();
                 let s = &mut *guard;
                 let m = s.meters.get_mut(i)?;
@@ -842,7 +856,7 @@ impl SkinWindow {
     /*  DynamicWindowSize=1: the window follows the meters. Used after an update and by !Redraw,
         since Rainmeter's redraw resize the window when !UpdateMeter changed a meter. */
     fn fit_window(&self) {
-        let new_size = crate::dollarvar::with_skin(self.info(), || {
+        let new_size = self.as_skin(|| {
             let s = self.skin.borrow();
             s.dynamic_window.then(|| skin::window_size(&s.meters, &s.measures, s.fixed_size, s.background.as_ref(), s.background_margins))
         });
@@ -862,11 +876,10 @@ impl SkinWindow {
             let s = self.skin.borrow();
             (s.file.clone(), s.skins_root.clone(), s.settings_dir.clone())
         };
-        let info = self.info();
-        let mut fresh = match crate::dollarvar::with_skin(info, || skin::load(&file, &root, &settings)) {
+        let mut fresh = match self.as_skin(|| skin::load(&file, &root, &settings)) {
             Ok(fresh) => fresh,
             Err(e) => {
-                eprintln!("!Refresh: {e}");
+                self.log(Level::Error, &format!("!Refresh: {e}"));
                 return;
             }
         };
@@ -897,12 +910,11 @@ impl SkinWindow {
                 // the borrow ends with this line, before the bangs change the skin
                 let Some((name, raw)) = self.skin.borrow_mut().next_move_action(pos, step) else { break };
                 // [#Var], [&Measure] and [$Skin...] are filled in now, as for clicks
-                let info = self.info();
                 let text = {
                     let s = self.skin.borrow();
-                    crate::dollarvar::with_skin(info, || s.expand_action(&name, &raw))
+                    self.as_skin(|| s.expand_action(&name, &raw))
                 };
-                println!("{step:?} on {name}: {text}");
+                self.log(Level::Debug, &format!("{step:?} on {name}: {text}"));
                 self.run_action(&text);
                 /*  An action that refreshed the skin starts it again with every flag off: stop
                     here, or MouseOverAction=[!Refresh] would run forever. the next mouse move
@@ -916,15 +928,13 @@ impl SkinWindow {
 
     // Runs the action of the first of `events` that anything at (x, y) has an action for
     fn mouse_action(&self, x: f64, y: f64, events: &[MouseEvent]) {
-        // [$SkinX] and the others in the action describe this skin
-        let info = self.info();
         // Copy the action text out, so the read borrow ends before the bangs change the skin
         let text = {
             let s = self.skin.borrow();
-            let expand = |name: &str, a: &str| crate::dollarvar::with_skin(info, || s.expand_action(name, a));
+            let expand = |name: &str, a: &str| self.as_skin(|| s.expand_action(name, a));
             let found = events.iter().find_map(|&e| s.action_at(x, y, e).map(|(name, a)| (e, expand(name, a))));
             let Some((event, text)) = found else { return };
-            println!("{event:?} at ({x:.0}, {y:.0}): {text}");
+            self.log(Level::Debug, &format!("{event:?} at ({x:.0}, {y:.0}): {text}"));
             text
         }; // `s` is dropped here: the skin is no longer borrowed
         self.run_action(&text);
@@ -935,11 +945,12 @@ impl SkinWindow {
     actions (OnUpdateAction and others).*/
     fn run_action(&self, text: &str) {
         let (Some(me), Some(manager)) = (self.me.upgrade(), self.manager.upgrade()) else { return };
+        let source = self.skin.borrow().source.clone(); // target errors name the skin whose action it is
         // Like Rainmeter, refreshes wait until the rest of the action has run
         let mut to_refresh: Vec<Rc<SkinWindow>> = Vec::new();
         let mut config_bangs: Vec<ConfigBang> = Vec::new();
         for command in action::split_bangs(text) {
-            let targets = match action::target(command) {
+            let targets = match crate::log::with_source(&source, || action::target(command)) {
                 Target::This => vec![me.clone()],
                 Target::All => manager.all(),
                 Target::Group(group) => manager.in_group(&group),
@@ -991,10 +1002,9 @@ impl SkinWindow {
             return;
         }
         //[#Var], [&Measure] and [$Skin...] are filled in now as for mouse action
-        let info = self.info();
         let text = {
             let s = self.skin.borrow();
-            crate::dollarvar::with_skin(info, || s.expand_action(section, &raw))
+            self.as_skin(|| s.expand_action(section, &raw))
         };
         busy.set(true);
         self.run_action(&text);
@@ -1005,7 +1015,8 @@ impl SkinWindow {
     // config bangs are handed back, for the caller to do when the action is finished.
     fn run(&self, command: &str) -> After {
         // Borrowed for this bang only: !Update needs to borrow the skin itself
-        let after = action::execute(&mut self.skin.borrow_mut(), command);
+        let source = self.skin.borrow().source.clone(); // bang errors name the skin the bang runs on
+        let after = crate::log::with_source(&source, || action::execute(&mut self.skin.borrow_mut(), command));
         match after {
             After::Redraw => {
                 self.fit_window();
@@ -1014,13 +1025,13 @@ impl SkinWindow {
             After::UpdateMeter(pick) => {
                 let values = crate::measure::current_values(&self.skin.borrow().measures);
                 if !self.update_meters(&values, &pick) && let Pick::Name(name) = &pick {
-                    eprintln!("!UpdateMeter: [{name}] not found");
+                    self.log(Level::Error, &format!("!UpdateMeter: [{name}] not found"));
                 }
             }
             After::UpdateMeasure(pick) => {
                 let mut values = crate::measure::current_values(&self.skin.borrow().measures);
                 if !self.update_measures(&mut values, &pick) && let Pick::Name(name) = &pick {
-                    eprintln!("!UpdateMeasure: [{name}] not found");
+                    self.log(Level::Error, &format!("!UpdateMeasure: [{name}] not found"));
                 }
             }
             After::Window(bang) => self.apply_window_bang(bang),
@@ -1039,9 +1050,9 @@ impl SkinWindow {
         let bang = command.split_whitespace().next().unwrap_or(command);
         let folder = self.skin.borrow().skins_root.join(config.replace('\\', "/"));
         if folder.is_dir() {
-            eprintln!("{bang}: Skin \"{config}\" is not active");
+            self.log(Level::Error, &format!("{bang}: Skin \"{config}\" is not active"));
         } else {
-            eprintln!("{bang}: Skin \"{config}\" does not exist");
+            self.log(Level::Error, &format!("{bang}: Skin \"{config}\" does not exist"));
         }
     }
 }

@@ -5,7 +5,7 @@ use crate::formula;
 use crate::position::ZPos;
 use crate::skin::Skin;
 use crate::measure::Measure;
-use crate::log::{log, Level};
+use crate::log::{log, skin_log, Level};
 use crate::{paths, textfile, writekey};
 use std::path::Path;
 
@@ -118,7 +118,7 @@ pub fn target(cmd: &str) -> Target {
         let count = arg_count(base).unwrap_or(0);
         return match args.get(count).map(String::as_str) {
             None => {
-                eprintln!("!{name}: Incorrect number of arguments");
+                skin_log(Level::Error, &format!("!{name}: Incorrect number of arguments"));
                 Target::Nowhere
             }
             Some("") => Target::All,
@@ -137,7 +137,7 @@ pub fn target(cmd: &str) -> Target {
 // the others, and programs, are reported and skipped.
 pub fn execute(skin: &mut Skin, cmd: &str) -> After {
     let Some((name, args)) = parse_bang(cmd) else {
-        println!("Running programs isn't supported yet: {cmd}");
+        skin_log(Level::Warning, &format!("Running programs isn't supported yet: {cmd}"));
         return After::Nothing;
     };
     // Bang names ignore case: !hidemeter works as well as !HideMeter
@@ -155,7 +155,7 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
     match lower.as_str() {
         "showmeter" | "hidemeter" | "togglemeter" => {
             let Some(meter_name) = args.first() else {
-                eprintln!("!{name}: needs the name of a meter");
+                skin_log(Level::Error, &format!("!{name}: needs the name of a meter"));
                 return After::Nothing;
             };
             // Group=Bars work like the group bang, as for the measure bangs
@@ -182,14 +182,14 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
             }
             // A group with no meter in it is fine, as in Rainmeter
             if !found && !by_group {
-                eprintln!("!{name}: [{meter_name}] not found");
+                skin_log(Level::Error, &format!("!{name}: [{meter_name}] not found"));
             }
             After::Nothing // like Rainmeter: seen at the next update or !Redraw
         }
         "enablemeasure" | "disablemeasure" | "togglemeasure" | "pausemeasure" | "unpausemeasure"
         | "togglepausemeasure" => {
             let Some(measure_name) = args.first() else {
-                eprintln!("!{name}: needs the name of a measure");
+                skin_log(Level::Error, &format!("!{name}: needs the name of a measure"));
                 return After::Nothing;
             };
             // Group=Clock work like the group bang, as in newer Rainmeter (ConsumeGroupSelector)
@@ -218,13 +218,13 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
             }
             // A group with no measure in it is fine, as in Rainmeter
             if !found && !by_group {
-                eprintln!("!{name}: [{measure_name}] not found");
+                skin_log(Level::Error, &format!("!{name}: [{measure_name}] not found"));
             }
             After::Nothing // like Rainmeter: seen at the next update
         }
         "commandmeasure" => {
             // !CommandMeasure Measure "Command" [Config] (Rainmeter's Skin::CommandMeasure)
-            let source = log_source(skin);
+            let source = skin.source.clone();
             let mut args =args;
             /*  Old skins put both in one argument: !CommandMeasure "Measure Command".
                 Rainmeter splits it at the first space and warns (CommandHandler.cpp DoBang). */
@@ -265,7 +265,7 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
         }
         "setoption" => {
             let [section, key, value, ..] = args.as_slice() else {
-                eprintln!("!{name}: needs a section, an option and a value");
+                skin_log(Level::Error, &format!("!{name}: needs a section, an option and a value"));
                 return After::Nothing;
             };
             /*  Group=Name or !SetOptionGroup: every meter, then every measure, in the group,
@@ -286,15 +286,15 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
             } else if let Some(switch) = skin.measure_switch(section) {
                 switch.set_option(key, value);
             } else if section.eq_ignore_ascii_case("rainmeter") {
-                println!("!{name} on [Rainmeter] isn't supported yet");
+                skin_log(Level::Warning, &format!("!{name} on [Rainmeter] isn't supported yet"));
             } else {
-                eprintln!("!{name}: [{section}] not found");
+                skin_log(Level::Error, &format!("!{name}: [{section}] not found"));
             }
             After::Nothing // like Rainmeter: seen at the next update
         }
         "setvariable" => {
             let [var, value, ..] = args.as_slice() else {
-                eprintln!("!{name}: needs a variable name and a value");
+                skin_log(Level::Error, &format!("!{name}: needs a variable name and a value"));
                 return After::Nothing;
             };
             // Variable names ignore case: the table keys are lowercase
@@ -315,7 +315,7 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
         "update" => After::Update,
         "updatemeter" | "updatemeasure" => {
             let Some(arg) = args.first() else {
-                eprintln!("!{name}: Incorrect number of arguments");
+                skin_log(Level::Error, &format!("!{name}: Incorrect number of arguments"));
                 return After::Nothing;
             };
             let pick = Pick::read(arg, by_group);
@@ -324,7 +324,7 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
         "refresh" => After::Refresh,
         "activateconfig" | "toggleconfig" => {
             let Some(config) = args.first().cloned() else {
-                eprintln!("!{name}: Invalid parameters");
+                skin_log(Level::Error, &format!("!{name}: Invalid parameters"));
                 return After::Nothing;
             };
             let file = args.get(1).cloned();
@@ -339,7 +339,7 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
         }
         "deactivateconfiggroup" => {
             let Some(group) = args.first().cloned() else {
-                eprintln!("!{name}: Invalid parameters");
+                skin_log(Level::Error, &format!("!{name}: Invalid parameters"));
                 return After::Nothing;
             };
             After::Config(ConfigBang::DeactivateGroup { group })
@@ -357,7 +357,7 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
         }
         "move" => {
             let [x, y, ..] = args.as_slice() else {
-                eprintln!("!{name}: needs X and Y");
+                skin_log(Level::Error, &format!("!{name}: needs X and Y"));
                 return After::Nothing;
             };
             // ParseInt again: a number or a (formula), the fraction dropped; else 0
@@ -367,7 +367,7 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
         "log" => {
             // !Log "text" [Notice|Warning|Error|Debug] (Rainmeter's DoLogBang). No text: noting
             let Some(message) = args.first() else { return After::Nothing };
-            let source = log_source(skin);
+            let source = skin.source.clone();
             match args.get(1).map_or(Some(Level::Notice), |kind| Level::parse(kind)) {
                 Some(level) => log(level, &source, message),
                 None => log(Level::Error, &source, "!Log: Invalid type"),
@@ -376,7 +376,7 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
         }
         "writekeyvalue" => {
             // !WriteKeyValue Section Key Value [File] (Rainmeter's DoWriteKeyValueBang)
-            let source = log_source(skin);
+            let source = skin.source.clone();
             let [section, key, value, rest @ ..] = args.as_slice() else {
                 log(Level::Error, &source, "!WriteKeyValue: Invalid parameters");
                 return After::Nothing;
@@ -388,7 +388,7 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
             After::Nothing
         }
         _ => {
-            println!("!{name} isn't supported yet");
+            skin_log(Level::Warning, &format!("!{name} isn't supported yet"));
             After::Nothing
         }
     }
@@ -518,16 +518,10 @@ fn variable_value(value: &str) -> String {
             if text == "-0" { "0".to_string() } else { text.to_string() }
         }
         Err(e) => {
-            eprintln!("&formula: {e}: {value}");
+            skin_log(Level::Error, &format!("Formula: {e}: {value}"));
             value.to_string()
         }
     }
-}
-
-// The log source fora skin's messages: its config and file, like illustro\Clock\Clock.ini
-fn log_source(skin: &Skin) -> String {
-    let file = skin.file.file_name().unwrap_or_default().to_string_lossy();
-    format!("{}\\{file}", skin.config)
 }
 
 /*  !WriteKeyValue, following Rainmeter's DoWriteKeyValueBang: the file must already

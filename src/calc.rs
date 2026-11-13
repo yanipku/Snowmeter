@@ -1,5 +1,6 @@
 use crate::formula::{self, Env, Expr, Suffix};
 use crate::ini::{self, Section};
+use crate::log::{section_log, Level};
 use crate::measure::{fraction_in, number_option, Measure, Values};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -85,7 +86,7 @@ impl CalcMeasure {
         let expr = match formula::parse(formula) {
             Ok(e) => Some(e),
             Err(e) => {
-                eprintln!("[{}] cannot read Formula '{}': {}", name, formula, e);
+                section_log(Level::Error, name, &format!("cannot read Formula '{formula}': {e}"));
                 None
             }
         };
@@ -149,7 +150,7 @@ impl Measure for CalcMeasure {
             }
             Err(e) => {
                 if !self.failing {
-                    eprintln!("[{}] formula error: {} (value set to 0)", self.name, e);
+                    section_log(Level::Error, &self.name, &format!("formula error: {e} (value set to 0)"));
                     self.failing = true;
                 }
                 self.value = 0.0;

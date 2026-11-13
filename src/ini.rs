@@ -1,3 +1,4 @@
+use crate::log::{skin_log, Level};
 use crate::{paths, textfile};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -330,37 +331,31 @@ impl Loader {
     // Problems are reported and the include is skipped, like Rainmeter does.
     fn load_include(&mut self, value: &str) -> Option<Vec<RawSection>> {
         if self.count >= MAX_INCLUDES {
-            eprintln!(
-                "too many @Include files (limit {}), skipping '{}'",
-                MAX_INCLUDES, value
-            );
+            skin_log(Level::Error, &format!("too many @Include files (limit {MAX_INCLUDES}), skipping '{value}'"));
             return None;
         }
         self.count += 1;
 
         let name = resolve(value, &self.vars);
         let Some(found) = paths::find_file(&self.base_dir, &name) else {
-            eprintln!("@Include file '{}' not found", name);
+            skin_log(Level::Error, &format!("@Include file '{}' not found", name));
             return None;
         };
         let canon = match found.canonicalize() {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("@Include '{}': {}", name, e);
+                skin_log(Level::Error, &format!("@Include '{}': {}", name, e));
                 return None;
             }
         };
         if !canon.starts_with(&self.allowed_root) {
-            eprintln!(
-                "@Include '{}' is outside the skin's folder, refusing to load it",
-                name
-            );
+            skin_log(Level::Error, &format!("@Include '{name}' is outside the skin's folder, refusing to load it"));
             return None;
         }
         match self.load_file(&canon) {
             Ok(sections) => Some(sections),
             Err(e) => {
-                eprintln!("@Include: {}", e);
+                skin_log(Level::Error, &format!("@Include: {}", e));
                 None
             }
         }

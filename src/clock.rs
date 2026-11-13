@@ -1,4 +1,5 @@
 use crate::ini::{self, Section};
+use crate::log::{section_log, Level};
 use crate::measure::Measure;
 use std::collections::HashMap;
 use chrono::{DateTime, FixedOffset, Local, Utc};
@@ -75,7 +76,7 @@ impl TimeMeasure {
         let offset = timezone_hours.and_then(|h| {
             let off = FixedOffset::east_opt((h * 3600.0).round() as i32);
             if off.is_none() {
-                eprintln!("[{}] TimeZone {} is out of range, using local time", name, h);
+                section_log(Level::Error, name, &format!("TimeZone {h} is out of range, using local time"));
             }
             off
         });
@@ -92,7 +93,7 @@ impl TimeMeasure {
 
         // Test the format once now, so a typo in a skin can't break every update
         if render(&format, &m.now()).is_none() {
-            eprintln!("[{}] invalid Format '{}', using {}", name, format, DEFAULT_FORMAT);
+            section_log(Level::Error, name, &format!("invalid Format '{format}', using {DEFAULT_FORMAT}"));
             format = DEFAULT_FORMAT.to_string();
         }
         m.format = format;

@@ -1,6 +1,7 @@
-use crate::ini::{self, Section};
 use crate::{formula, sectionvar};
 use crate::group::Groups;
+use crate::ini::{self, Section};
+use crate::log::{section_log, Level};
 use std::collections::HashMap;
 
 // A measure's latest values, as seen by Calc formulas and section variables
@@ -42,10 +43,7 @@ pub fn number_option(
             } else {
                 ""
             };
-            eprintln!(
-                "[{}] cannot read {}={}: {}{}, ignoring it",
-                section.name, key, text, e, hint
-            );
+            section_log(Level::Error, &section.name, &format!("cannot read {key}={text}: {e}{hint}, ignoring it"));
             None
         }
     }
@@ -386,11 +384,7 @@ impl Measure for Ranged {
         }
         match failed {
             Some(e) if !self.complained => {
-                eprintln!(
-                    "[{}] cannot read MinValue/MaxValue: {} (keeping the last good value)",
-                    self.inner.name(),
-                    e
-                );
+                section_log(Level::Error, self.inner.name(), &format!("cannot read MinValue/MaxValue: {e} (keeping the last good value)"));
                 self.complained = true;
             }
             None => self.complained = false,

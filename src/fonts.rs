@@ -3,6 +3,7 @@ use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
+use crate::log::{skin_log, Level};
 use crate::paths;
 
 // Fontconfig is the C library Cairo uses to turn a font name into a file.
@@ -38,7 +39,7 @@ pub fn load_skin_fonts(resources: &Path, base_dir: &Path, get: impl Fn(&str) -> 
     if let Some(entries) = fonts_dir.and_then(|d| fs::read_dir(d).ok()) {
         for path in entries.filter_map(|e| e.ok()).map(|e| e.path()) {
             if path.is_file() && !add_font_file(&path) {
-                eprintln!("Unable to load font: {}", path.display());
+                skin_log(Level::Error, &format!("Unable to load font: {}", path.display()));
             }
         }
     }
@@ -49,7 +50,7 @@ pub fn load_skin_fonts(resources: &Path, base_dir: &Path, get: impl Fn(&str) -> 
     {
         let loaded = paths::find_file(base_dir, &name).is_some_and(|p| add_font_file(&p));
         if !loaded {
-            eprintln!("Unable to load font: {name}");
+            skin_log(Level::Error, &format!("Unable to load font: {name}"));
         }
         i += 1;
     }

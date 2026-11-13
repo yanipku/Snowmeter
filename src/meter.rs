@@ -1,6 +1,7 @@
 use crate::formula;
 use crate::group::Groups;
 use crate::ini::{self, Section};
+use crate::log::{section_log, skin_log, Level};
 use crate::measure::{Measure, Values};
 use crate::mouse::{MouseActions, MouseEvent};
 use crate::paths;
@@ -173,7 +174,7 @@ fn num_opt(section: &Section, key: &str, vars: &HashMap<String, String>) -> Opti
     match formula::parse_number(&text) {
         Ok(n) => Some(n),
         Err(e) => {
-            eprintln!("[{}] cannot read {}={}: {}", section.name, key, text, e);
+            section_log(Level::Error, &section.name, &format!("cannot read {key}={text}: {e}"));
             None
         }
     }
@@ -356,7 +357,7 @@ pub fn load_image(name: &str, base_dir: &Path, w: Option<f64>, h: Option<f64>) -
     // Check the size before decoding, so a hostile file can't make us allocate gigabytes
     let (_, iw, ih) = Pixbuf::file_info(&path)?;
     if iw > MAX_IMAGE_SIDE || ih > MAX_IMAGE_SIDE {
-        eprintln!("image {} is too large ({}x{}), skipping", path.display(), iw, ih);
+        skin_log(Level::Warning, &format!("Image {} is too large ({iw}x{ih}), skipping", path.display()));
         return None;
     }
 
@@ -444,7 +445,7 @@ fn pos_opt(section: &Section, key: &str, vars: &HashMap<String, String>) -> Pos 
     match parse_pos(&text) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("[{}] cannot read {}={}: {}", section.name, key, text, e);
+            section_log(Level::Error, &section.name, &format!("cannot read {key}={text}: {e}"));
             Pos::Abs(0.0)
         }
     }
@@ -468,10 +469,7 @@ impl Graph {
 
         if let Some(o) = opt(section, "graphorientation", vars) {
             if o.eq_ignore_ascii_case("horizontal") {
-                eprintln!(
-                    "[{}] GraphOrientation=Horizontal is not supported yet, drawing it Vertical",
-                    section.name
-                );
+                section_log(Level::Warning, &section.name, "GraphOrientation=Horizontal is not supported yet, drawing it Vertical");
             }
         }
 
@@ -717,7 +715,7 @@ impl Meter {
                 Some(name) => {
                     let found = find_index(measures, &name);
                     if found.is_none() {
-                        eprintln!("[{}] measure '{}' not found (or not supported)", section.name, name);
+                        section_log(Level::Error, &section.name, &format!(" measure '{name}' not found (or not supported)"));
                     }
                     measure_idx.push(found);
                 }
@@ -749,7 +747,7 @@ impl Meter {
         let padding = match opt(section, "padding", vars) {
             None => Padding::default(),
             Some(text) => parse_padding(&text).unwrap_or_else(|e| {
-                eprintln!("[{}] cannot read Padding={}: {}", section.name, text, e);
+                section_log(Level::Error, &section.name, &format!("cannot read Padding={text}: {e}"));
                 Padding::default()
             }),
         };
@@ -766,14 +764,14 @@ impl Meter {
                 let align = match opt(section, "stringalign", vars) {
                     None => (0.0, 0.0),
                     Some(text) => parse_align(&text).unwrap_or_else(|| {
-                        eprintln!("[{}] unknown StringAlign={}, using Left", section.name, text);
+                        section_log(Level::Error, &section.name, &format!("unknown StringAlign={text}, using Left"));
                         (0.0, 0.0)
                     }),
                 };
                 let case = match opt(section, "stringcase", vars) {
                     None => Case::None,
                     Some(text) => parse_case(&text).unwrap_or_else(|| {
-                        eprintln!("[{}] unknown StringCase={}, using None", section.name, text);
+                        section_log(Level::Error, &section.name, &format!("unknown StringCase={text}, using None"));
                         Case::None
                     }),
                 };
@@ -824,7 +822,7 @@ impl Meter {
                     _ => {
                         let loaded = load_image(&full, base_dir, w, h);
                         if loaded.is_none() {
-                            eprintln!("[{}] cannot load image '{}'", section.name, full);
+                            section_log(Level::Error, &section.name, &format!("cannot load image '{full}'"));
                         }
                         loaded
                     }
@@ -887,7 +885,7 @@ impl Meter {
                 }
             }
             other => {
-                eprintln!("[{}] unsupported meter type '{}', skipping", section.name, other);
+                section_log(Level::Error, &section.name, &format!("unsupported meter type '{other}', skipping"));
                 return None;
             }
         };

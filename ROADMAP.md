@@ -28,22 +28,22 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 2. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
 3. [ ] `[Rainmeter]` `Blur` / `BlurRegion`
 4. [ ] Right-click menu (`ContextTitle` / `ContextAction`, and `!SetOption Rainmeter Context…`). Start the `tr()` text lookup here: the first text to translate, with Rainmeter's section/key names (`[RainmeterMenu]`, `[SkinMenu]`)
-5. [ ] Task (not a feature): send every log message through `log::log` (as `!Log` does) instead of `eprintln!`/`println!`, so each has a level (ERRO/WARN/NOTE/DBUG) and a source, and the Manage window's Log tab can show them all. The source comes from the current skin (`with_skin`/`SkinInfo`); command-line output (`--list`, usage) stays `println!`; messages stay English, as in Rainmeter. One file per step
-6. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
-7. [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction`
-8. [ ] `IfMatch` actions
-9. [ ] Measure option `UpdateDivider`
-10. [ ] `[Rainmeter]` `DefaultUpdateDivider` (measures first; meters once meter `UpdateDivider` is done)
-11. [ ] Measure options `Substitute` / `RegExpSubstitute`
-12. [ ] Measure option `AverageSize`
-13. [ ] Meter option `AntiAlias`
-14. [ ] Meter option `TransformationMatrix`
-15. [ ] Meter option `UpdateDivider`
-16. [ ] Meter `Container`
-17. [ ] Running programs from actions (safely, never through a shell)
-18. [ ] Measure `CPU`: `Processor=N`
-19. [ ] Measure `Memory`
-20. [ ] Measure `SwapMemory`
+5. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
+6. [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction`
+7. [ ] `IfMatch` actions
+8. [ ] Measure option `UpdateDivider`
+9. [ ] `[Rainmeter]` `DefaultUpdateDivider` (measures first; meters once meter `UpdateDivider` is done)
+10. [ ] Measure options `Substitute` / `RegExpSubstitute`
+11. [ ] Measure option `AverageSize`
+12. [ ] Meter option `AntiAlias`
+13. [ ] Meter option `TransformationMatrix`
+14. [ ] Meter option `UpdateDivider`
+15. [ ] Meter `Container`
+16. [ ] Running programs from actions (safely, never through a shell)
+17. [ ] Measure `CPU`: `Processor=N`
+18. [ ] Measure `Memory`
+19. [ ] Measure `SwapMemory`
+20. [ ] Measure `Time`: `TimeStamp`, `TimeStampFormat`, `DaylightSavingTime`, `FormatLocale`
 ---
 
 ## Skin files and variables
@@ -143,7 +143,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] Bangs: `!SetOptionGroup` (every meter, then every measure, in the group; also `!SetOption Group=Name …`; an empty value removes the option, even the one written in the file, as in Rainmeter)
 - [x] Bangs: `!Update` (restarts the Update timer), `!Redraw`
 - [x] Bangs: `!Refresh` (this skin only; reloads the file, restarts the timer, keeps the old skin on an error)
-- [x] Bangs: `!Log` (`Notice`/`Warning`/`Error`/`Debug`; prints to the terminal (stderr) in Rainmeter's log-file format, with control characters shown as `?` so a skin can't send escape codes; the Manage window's Log tab will show the same lines later)
+- [x] Bangs: `!Log` (`Notice`/`Warning`/`Error`/`Debug`; prints to the terminal (stderr) in Rainmeter's log-file format, with control characters shown as `?` so a skin can't send escape codes; the Manage window's Log tab will show the same lines later). Snowmeter's own messages use the same log too: the source is the skin (`config\file.ini`), or `config\file.ini - [Section]` for one section's option, or empty for program messages, as in Rainmeter; Debug lines (mouse-action traces) always print for now (Rainmeter needs `Debug=1`)
 - [x] Bangs: `!UpdateMeter`, `!UpdateMeasure` (`*` = all; each runs its `OnUpdateAction`; no repaint until `!Redraw`, which now also resizes a `DynamicWindowSize` skin, as in Rainmeter; meters after an updated one are placed again, since relative X/Y follow it. also `!UpdateMeasureGroup` / `!UpdateMeterGroup` and `Group=Name`, where `*` is a group name)
 - [x] Bangs: `!EnableMeasure`, `!DisableMeasure`, `!ToggleMeasure`, `!PauseMeasure`, `!UnpauseMeasure`, `!TogglePauseMeasure` (seen at the next update; disabled = 0, paused = last value)
 - [x] Bangs: `!EnableMeasureGroup`, `!DisableMeasureGroup`, `!ToggleMeasureGroup`, `!PauseMeasureGroup`, `!UnpauseMeasureGroup`, `!TogglePauseMeasureGroup` (also the newer `Group=Name` form of the plain bangs, e.g. `!DisableMeasure Group=Clocks`; a group with no measures in it is silent, as in Rainmeter)
