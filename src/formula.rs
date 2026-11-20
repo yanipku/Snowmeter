@@ -1,5 +1,5 @@
-// Formula parser and evaluator, following Rainmeter's Formulas page.
-// A formula is parsed once; evaluating it is cheap, so Calc can run it every update.
+/*  Formula parser and evaluator, following Rainmeter's Formulas page.
+    A formula is parsed once; evaluating it is cheap, so Calc can run it every update. */
 
 const MAX_LEN: usize = 4096; // characters in one formula
 const MAX_DEPTH: usize = 200; // nesting of parentheses, conditionals and unary signs
@@ -255,9 +255,9 @@ fn describe(t: &Tok) -> String {
     }
 }
 
-// ---------- parser ----------
-// Precedence, lowest to highest: ?:  ||  &&  comparisons  |  ^  &  + -  * / %  unary  **
-// (Rainmeter doesn't document its precedence; this is the usual Rust/Python order.)
+/*  ---------- parser ----------
+    Precedence, lowest to highest: ?:  ||  &&  comparisons  |  ^  &  + -  * / %  unary  **
+    (Rainmeter doesn't document its precedence; this is the usual Rust/Python order.) */
 
 const LEVELS: &[&[(&str, Bin)]] = &[
     &[("||", Bin::LOr)],
@@ -630,8 +630,8 @@ pub fn parse(text: &str) -> Result<Expr, String> {
     Ok(expr)
 }
 
-// Reads a numeric option: a plain number, or a (formula) in parentheses.
-// The result must be a finite number.
+/*  Reads a numeric option: a plain number, or a (formula) in parentheses.
+    The result must be a finite number. */
 pub fn parse_number(text: &str) -> Result<f64, String> {
     let t = text.trim();
     if t.starts_with('(') && t.ends_with(')') {

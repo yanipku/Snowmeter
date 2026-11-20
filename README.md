@@ -12,13 +12,13 @@ The full checklist, compared with Rainmeter for Windows, is in [ROADMAP.md](ROAD
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 85 / 158 ≈ **54%**
+- Roadmap checklist: 87 / 164 ≈ **53%**
 - Translations: 0 / 39 = **0%**
 
 - Compatibility with each kind of desktop (the desktop-dependent items in the roadmap):
   - X11: 4 / 7 ≈ **57%**
   - Wayland with layer-shell (KDE, sway, Hyprland, labwc, …): 6 / 7 ≈ **86%**
-  - GNOME (Wayland): 0 / 7 = **0%** (runs through XWayland, untested)
+  - GNOME (Wayland): 4 / 7 ≈ **57%** (runs through XWayland; first tests on Ubuntu 25.04)
 
 ## What works
 

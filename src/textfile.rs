@@ -4,8 +4,8 @@ use std::io::Read;
 use std::path::Path;
 use crate::log::{skin_log, Level};
 
-// Real skins are a few KB. Refusing huge files stops a hostile "skin"
-// from making the program load gigabytes into memory.
+/*  Real skins are a few KB. Refusing huge files stops a hostile "skin"
+    from making the program load gigabytes into memory. */
 const MAX_BYTES: u64 = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -41,8 +41,8 @@ pub fn read_text_kind(path: &Path) -> Result<(String, Kind), String> {
 }
 
 fn decode(bytes: &[u8], path: &Path) -> (String, Kind) {
-    // 1. A byte order mark (BOM) says exactly which encoding the file uses:
-    //    EF BB BF = UTF-8, FF FE = UTF-16 little-endian, FE FF = UTF-16 big-endian
+    /*  1. A byte order mark (BOM) says exactly which encoding the file uses:
+           EF BB BF = UTF-8, FF FE = UTF-16 little-endian, FE FF = UTF-16 big-endian */
     if let Some((encoding, bom_len)) = Encoding::for_bom(bytes) {
         let (text, had_errors) = encoding.decode_without_bom_handling(&bytes[bom_len..]);
         if had_errors {
@@ -68,8 +68,8 @@ fn decode(bytes: &[u8], path: &Path) -> (String, Kind) {
     (text.into_owned(), Kind::Ansi)
 }
 
-/*Writes text back the way read_text_kind found it stored. UTF_16 is written by hand:
-encoding_rs only decodes it (its encoder for UTF-16 gives UTF-8). */
+/*  Writes text back the way read_text_kind found it stored. UTF_16 is written by hand:
+    encoding_rs only decodes it (its encoder for UTF-16 gives UTF-8). */
 pub fn write_text(path: &Path, text: &str, kind: Kind) -> Result<(), String> {
     let bytes: Vec<u8> = match kind {
         Kind::Utf8 { bom } => {

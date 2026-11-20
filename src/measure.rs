@@ -26,8 +26,8 @@ pub fn fraction_in(value: f64, min: f64, max: f64) -> f64 {
     if p.is_finite() { p.clamp(0.0, 1.0) } else { 0.0 }
 }
 
-// Reads a number option such as MinValue. It may be a (formula).
-// Bad values are reported and ignored.
+/*  Reads a number option such as MinValue. It may be a (formula).
+    Bad values are reported and ignored. */
 pub fn number_option(
     section: &Section,
     key: &str,
@@ -53,16 +53,16 @@ pub trait Measure {
     fn name(&self) -> &str;
     fn update(&mut self);
 
-    // Like update(), for measures that read other measures' values (Calc).
-    // Everything else just updates itself.
+    /*  Like update(), for measures that read other measures' values (Calc).
+        Everything else just updates itself. */
     fn update_with(&mut self, _values: &Values) {
         self.update();
     }
 
     fn value(&self) -> f64;
 
-    // The MinValue..MaxValue range that value() is measured against.
-    // Our built-in measures report percentages, so the default is 0..100.
+    /*  The MinValue..MaxValue range that value() is measured against.
+        Our built-in measures report percentages, so the default is 0..100. */
     fn range(&self) -> (f64, f64) {
         (0.0, 100.0)
     }
@@ -101,19 +101,19 @@ pub trait Measure {
         Err("Not supported".to_string())
     }
 
-    // The Disabled/Paused state, for the bangs that change it. Only Switch has one;
-    // skin::load wraps every measure in a Switch, so through the skin this is always Some.
+    /*  The Disabled/Paused state, for the bangs that change it. Only Switch has one;
+        skin::load wraps every measure in a Switch, so through the skin this is always Some. */
     fn switch_mut(&mut self) -> Option<&mut Switch> {
         None
     }
 }
 
-// Wraps a measure so it can be disabled or paused (Disabled=, Paused=, and bangs such as
-// !DisableMeasure). As in Rainmeter's Measure::Update: a paused measure isn't updated and
-// keeps its last value; a disabled one isn't updated and its value becomes 0.
-// Paused wins when both are set.
-// It also keeps the section's options as written, so !SetOption can change one and have
-// the measure read them again at the next update.
+/*  Wraps a measure so it can be disabled or paused (Disabled=, Paused=, and bangs such as
+    !DisableMeasure). As in Rainmeter's Measure::Update: a paused measure isn't updated and
+    keeps its last value; a disabled one isn't updated and its value becomes 0.
+    Paused wins when both are set.
+    It also keeps the section's options as written, so !SetOption can change one and have
+    the measure read them again at the next update. */
 pub struct Switch {
     inner: Box<dyn Measure>,
     disabled: bool,                 // change them with set_disabled / set_paused, which keep the options in step
@@ -166,9 +166,9 @@ impl Switch {
         self.groups = Groups::read_group(&text);
     }
 
-    // !SetOption: changes one option as written, and rereads them all at the next update
-    // (Rainmeter's Skin::SetOption). An empty value removes the option, so its default
-    // applies again.
+    /*  !SetOption: changes one option as written, and rereads them all at the next update
+        (Rainmeter's Skin::SetOption). An empty value removes the option, so its default
+        applies again. */
     pub fn set_option(&mut self, key: &str, value: &str) {
         let Some(src) = self.source.as_mut() else { return };
         let key = key.to_lowercase(); // the table keys are lowercase
@@ -180,9 +180,9 @@ impl Switch {
         self.reread_once = true;
     }
 
-    // !EnableMeasure / !DisableMeasure and the pause bangs. As in Rainmeter's
-    // Measure::Disable() and the like, the option is changed too, or the next reread
-    // (after a !SetOption) would read the old value back and undo the bang.
+    /*  !EnableMeasure / !DisableMeasure and the pause bangs. As in Rainmeter's
+        Measure::Disable() and the like, the option is changed too, or the next reread
+        (after a !SetOption) would read the old value back and undo the bang. */
     pub fn set_disabled(&mut self, on: bool) {
         self.disabled = on;
         self.write_flag("disabled", on);
@@ -217,8 +217,8 @@ impl Switch {
         self.vars.insert(name.to_string(), value.to_string());
     }
 
-    // After !SetOption: reads the options again, with [Measure] references filled in from
-    // the latest values. Disabled/Paused first, then the measure's own options.
+    /*  After !SetOption: reads the options again, with [Measure] references filled in from
+        the latest values. Disabled/Paused first, then the measure's own options. */
     fn reread_if_asked(&mut self, values: &Values) {
         if !std::mem::take(&mut self.reread_once) {
             return;
@@ -330,10 +330,10 @@ impl Ranged {
         Ranged { inner, min: None, max: None, min_src: None, max_src: None, complained: false, invert: false }
     }
 
-    // Reads MinValue/MaxValue, at load and after !SetOption. A missing one (None) keeps
-    // the measure's own value for that end. With DynamicVariables=1 their text is kept,
-    // [Name] references and all, and read again on every update; otherwise they are
-    // fixed numbers.
+    /*  Reads MinValue/MaxValue, at load and after !SetOption. A missing one (None) keeps
+        the measure's own value for that end. With DynamicVariables=1 their text is kept,
+        [Name] references and all, and read again on every update; otherwise they are
+        fixed numbers. */
     pub fn read_range(&mut self, section: &Section, vars: &HashMap<String, String>) {
         let dynamic = number_option(section, "dynamicvariables", vars).unwrap_or(0.0) != 0.0;
         if dynamic {
@@ -437,8 +437,8 @@ fn sample_of(m: &dyn Measure) -> Sample {
     Sample { value: m.value(), min, max, text: m.text(), timestamp: m.timestamp() }
 }
 
-// Updates every measure in order, like Rainmeter does, and returns everyone's fresh values
-// Every measure's values as they are now, without updating anything
+/*  Updates every measure in order, like Rainmeter does, and returns everyone's fresh values
+    Every measure's values as they are now, without updating anything */
 pub fn current_values(measures: &[Box<dyn Measure>]) -> Values {
     measures.iter().map(|m| (m.name().to_lowercase(), sample_of(&**m))).collect()
 }

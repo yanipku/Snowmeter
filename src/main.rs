@@ -8,6 +8,7 @@ mod fonts;
 mod formula;
 mod group;
 mod ini;
+mod lang;
 mod log;
 mod manager;
 mod measure;
@@ -76,10 +77,10 @@ fn print_skins(root: &Path, source: &str) {
     }
 }
 
-// Backend order: Wayland with layer-shell, else X11 through XWayland (where x11pos.rs can
-// place windows and keep them above/below), else plain Wayland windows. GTK can't switch
-// backend once started, so for X11 the program restarts itself with GDK_BACKEND=x11.
-// GDK_BACKEND set by the user always wins (and also stops the restart from looping).
+/*  Backend order: Wayland with layer-shell, else X11 through XWayland (where x11pos.rs can
+    place windows and keep them above/below), else plain Wayland windows. GTK can't switch
+    backend once started, so for X11 the program restarts itself with GDK_BACKEND=x11.
+    GDK_BACKEND set by the user always wins (and also stops the restart from looping). */
 fn fall_back_to_xwayland() {
     if env::var_os("GDK_BACKEND").is_some() || env::var_os("DISPLAY").is_none() {
         return;
@@ -144,8 +145,8 @@ fn main() -> glib::ExitCode {
     let (skins_dir, source) = config::resolve_skins_dir(skins_dir_arg, &cfg);
     let root = config::ensure_skins_dir(&skins_dir).unwrap_or_else(|e| fail(&e));
 
-    // The skins to run: the ones named on the command line, else the ones that were
-    // running last time (Active= in the settings file)
+    /*  The skins to run: the ones named on the command line, else the ones that were
+        running last time (Active= in the settings file) */
     let files: Vec<(String, Result<PathBuf, String>)> = if skin_args.is_empty() {
         config::active_skins(&cfg, &root)
             .into_iter()
@@ -194,9 +195,9 @@ fn main() -> glib::ExitCode {
             manager.quit();
         });
     }
-    // activate runs when the app starts. GTK wants a callback that may run more than
-    // once, so the skins sit in a Cell and take() hands them over the first time only
-    // (later calls get an empty list).
+    /*  activate runs when the app starts. GTK wants a callback that may run more than
+        once, so the skins sit in a Cell and take() hands them over the first time only
+        (later calls get an empty list). */
     let first_skins = Cell::new(skins);
     app.connect_activate(move |_| {
         for skin in first_skins.take() {

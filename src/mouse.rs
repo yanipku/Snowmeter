@@ -1,5 +1,5 @@
-// Mouse actions such as LeftMouseUpAction, on meters and on [Rainmeter].
-// Follows Rainmeter's Library/Mouse.cpp.
+/*  Mouse actions such as LeftMouseUpAction, on meters and on [Rainmeter].
+    Follows Rainmeter's Library/Mouse.cpp. */
 
 use crate::ini::{self, Section};
 use std::collections::HashMap;
@@ -42,8 +42,8 @@ impl MouseEvent {
         MouseEvent::ScrollRight,
     ];
 
-    // The event for a GTK button number (1 left, 2 middle, 3 right) and kind of press.
-    // None for other buttons, such as the side buttons.
+    /*  The event for a GTK button number (1 left, 2 middle, 3 right) and kind of press.
+        None for other buttons, such as the side buttons. */
     pub fn from_button(button: u32, press: Press) -> Option<MouseEvent> {
         use MouseEvent::*;
         Some(match (button, press) {
@@ -113,11 +113,11 @@ pub struct MouseActions {
 }
 
 impl MouseActions {
-    // #Variables# are replaced now (at load, or on every update with DynamicVariables=1),
-    // but section variables such as [MeasureCPU] and [#Var] are kept as text and filled in
-    // when the action runs, so a click sees the values of that moment (Skin::expand_action).
-    // So `section` must hold the options before section variables are expanded.
-    // This is Rainmeter's ReadActionString: sectionVariables = false.
+    /*  #Variables# are replaced now (at load, or on every update with DynamicVariables=1),
+        but section variables such as [MeasureCPU] and [#Var] are kept as text and filled in
+        when the action runs, so a click sees the values of that moment (Skin::expand_action).
+        So `section` must hold the options before section variables are expanded.
+        This is Rainmeter's ReadActionString: sectionVariables = false. */
     pub fn read(section: &Section, vars: &HashMap<String, String>) -> MouseActions {
         let actions = MouseEvent::ALL
             .iter()

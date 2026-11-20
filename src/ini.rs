@@ -83,8 +83,8 @@ impl Ini {
     }
 }
 
-// Replaces #Name# with the value of the variable Name (case-insensitive).
-// Like in Rainmeter, a value may use other variables in turn (A=#B#).
+/*  Replaces #Name# with the value of the variable Name (case-insensitive).
+    Like in Rainmeter, a value may use other variables in turn (A=#B#). */
 pub fn resolve(value: &str, vars: &HashMap<String, String>) -> String {
     let mut out = String::new();
     resolve_into(&mut out, value, vars, 0);
@@ -104,9 +104,9 @@ fn truncate_to_cap(s: &mut String) {
     }
 }
 
-// Appends `value` to `out` with its variables replaced, following variables inside
-// variables up to MAX_VAR_DEPTH deep. Every level writes into the same `out`, and
-// stops once it is MAX_RESOLVED_LEN long, so hostile chains stay cheap.
+/*  Appends `value` to `out` with its variables replaced, following variables inside
+    variables up to MAX_VAR_DEPTH deep. Every level writes into the same `out`, and
+    stops once it is MAX_RESOLVED_LEN long, so hostile chains stay cheap. */
 fn resolve_into(out: &mut String, value: &str, vars: &HashMap<String, String>, depth: usize) {
     let mut rest = value;
     while let Some(start) = rest.find('#') {
@@ -135,21 +135,21 @@ fn resolve_into(out: &mut String, value: &str, vars: &HashMap<String, String>, d
 }
 
 const MAX_NESTED_DEPTH: usize = 10; // Rainmeter's maxRecursionDepth
-// A '[' is only looked for this many bytes before its ']'. Rainmeter has no limit, but
-// then text like [[[[…]]]] takes time that grows with the square of its length.
+/*  A '[' is only looked for this many bytes before its ']'. Rainmeter has no limit, but
+    then text like [[[[…]]]] takes time that grows with the square of its length. */
 const MAX_NESTED_SPAN: usize = 1024;
 
-// Replaces new-style variables [#Name] with the variable's value, as Rainmeter's
-// ExpandSectionVariables does for the '#' key. Works from the innermost [ ] outward,
-// so [#Color[#N]] reads [#N] first. [#*Name*] is an escape: it becomes the text [#Name].
-// Unknown names, and other brackets such as [Measure] or [!Bang], stay as written.
+/*  Replaces new-style variables [#Name] with the variable's value, as Rainmeter's
+    ExpandSectionVariables does for the '#' key. Works from the innermost [ ] outward,
+    so [#Color[#N]] reads [#N] first. [#*Name*] is an escape: it becomes the text [#Name].
+    Unknown names, and other brackets such as [Measure] or [!Bang], stay as written. */
 pub fn resolve_nested(text: &str, vars: &HashMap<String, String>) -> String {
     resolve_nested_with(text, vars, &|_| None)
 }
 
-// Like resolve_nested, and also [&Name], Rainmeter's nested section variable:
-// `section` gives the value of "Name" (or "Name:params"), or None if it's unknown.
-// Both kinds are done in the same pass, so [#Color[&Index]] and [&Measure[#N]] work.
+/*  Like resolve_nested, and also [&Name], Rainmeter's nested section variable:
+    `section` gives the value of "Name" (or "Name:params"), or None if it's unknown.
+    Both kinds are done in the same pass, so [#Color[&Index]] and [&Measure[#N]] work. */
 pub fn resolve_nested_with(
     text: &str,
     vars: &HashMap<String, String>,
@@ -176,8 +176,8 @@ fn resolve_nested_in(
         let mut next = end + 1; // by default, carry on after this ']'
         let mut start = end;
         let floor = end.saturating_sub(MAX_NESTED_SPAN);
-        // The '[' signs before this ']', nearest first. Searched as bytes: `floor` may fall
-        // inside a multi-byte character, and '[' is never part of one.
+        /*  The '[' signs before this ']', nearest first. Searched as bytes: `floor` may fall
+            inside a multi-byte character, and '[' is never part of one. */
         loop {
             let Some(open) = s.as_bytes()[floor..start].iter().rposition(|&b| b == b'[') else {
                 break;
@@ -187,8 +187,8 @@ fn resolve_nested_in(
             if inner.len() < 2 {
                 break; // "[]" or "[#]": nothing to look up
             }
-            // The key: '#' for a variable, '&' for a section variable, '\' for a character
-            // reference. Else try an earlier [
+            /*  The key: '#' for a variable, '&' for a section variable, '\' for a character
+                reference. Else try an earlier [ */
             if let Some(code) = inner.strip_prefix('\\') {
                 // Not a valid character: left as it is, as in Rainmeter
                 if let Some(c) = char_reference(code) {
@@ -212,8 +212,8 @@ fn resolve_nested_in(
             }
             let name = &inner[1..];
             if name.len() >= 2 && name.starts_with('*') && name.ends_with('*') {
-                // [#*Name*] → [#Name]: drop the two stars (the later one first,
-                // so the earlier index is still right)
+                /*  [#*Name*] → [#Name]: drop the two stars (the later one first,
+                    so the earlier index is still right) */
                 s.remove(end - 1);
                 s.remove(start + 2);
                 next = end - 1; // the ']' moved two places left
@@ -235,10 +235,10 @@ fn resolve_nested_in(
     }
 }
 
-// The character for a character reference: "8364" in [\8364], or "x20AC" in [\x20AC]
-// (both €). As in Rainmeter, the whole text must be the number (wcstol), and it must be
-// above 0 and below 0xFFFE. Rainmeter makes one UTF-16 unit, so codes past 0xFFFF can't
-// be written; the surrogate codes 0xD800–0xDFFF aren't characters on their own, so None.
+/*  The character for a character reference: "8364" in [\8364], or "x20AC" in [\x20AC]
+    (both €). As in Rainmeter, the whole text must be the number (wcstol), and it must be
+    above 0 and below 0xFFFE. Rainmeter makes one UTF-16 unit, so codes past 0xFFFF can't
+    be written; the surrogate codes 0xD800–0xDFFF aren't characters on their own, so None. */
 fn char_reference(code: &str) -> Option<char> {
     let (digits, radix) = match code.strip_prefix(['x', 'X']) {
         Some(hex) => (hex, 16),
@@ -252,10 +252,10 @@ fn char_reference(code: &str) -> Option<char> {
     char::from_u32(n as u32)
 }
 
-// Reads a skin file and everything it @Includes.
-//   builtin_vars  built-in variables such as #@#, usable inside @Include paths
-//   base_dir      relative include paths are looked up here
-//   allowed_root  include files must live inside this folder
+/*  Reads a skin file and everything it @Includes.
+      builtin_vars  built-in variables such as #@#, usable inside @Include paths
+      base_dir      relative include paths are looked up here
+      allowed_root  include files must live inside this folder */
 pub fn load_with_includes(
     path: &Path,
     builtin_vars: &HashMap<String, String>,
@@ -327,8 +327,8 @@ impl Loader {
         Ok(sections)
     }
 
-    // Finds, checks and loads the file named by an @Include value.
-    // Problems are reported and the include is skipped, like Rainmeter does.
+    /*  Finds, checks and loads the file named by an @Include value.
+        Problems are reported and the include is skipped, like Rainmeter does. */
     fn load_include(&mut self, value: &str) -> Option<Vec<RawSection>> {
         if self.count >= MAX_INCLUDES {
             skin_log(Level::Error, &format!("too many @Include files (limit {MAX_INCLUDES}), skipping '{value}'"));
@@ -399,8 +399,8 @@ impl Loader {
                         // Section already exists: add the options in reading order
                         out[i].pairs.extend(inc.pairs);
                     } else if main_names.contains(&ikey) {
-                        // This file defines it further down: the include's options go first,
-                        // so the main file's own lines override them
+                        /*  This file defines it further down: the include's options go first,
+                            so the main file's own lines override them */
                         pending.entry(ikey).or_default().extend(inc.pairs);
                     } else {
                         // Brand new section: goes right after the calling section

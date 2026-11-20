@@ -84,11 +84,22 @@ fn draw_piece(cr: &cairo::Context, p: &Pixbuf, (sx, sy, sw, sh): (i32, i32, i32,
 const MAX_WINDOW_SIDE: f64 = 16384.0; // a skin can't ask for an absurdly large window
 const MAX_STYLES: usize = 16; // parents a single MeterStyle may list
 
+// Rainmeter's limit for the skin's own right-click menu items (ContextTitle ... ContextTitle25)
+const MAX_CONTEXT_ITEMS: usize = 25;
+
+/*  One of the skin's own right-click menu items: number n (ContextActionN runs it) with its
+    title, or a separator (a title made only of dashes) */
+#[derive(Debug, PartialEq)]
+pub enum ContextItem {
+    Action { n: usize, title: String },
+    Separator,
+}
+
 pub struct Skin {
     pub measures: Vec<Box<dyn Measure>>,
     pub meters: Vec<Meter>,
-    pub update_ms: u64,
-    pub background: Option<Background>,    // BackgroundMode 0 or 2 (None = 1: nothing painted)
+    pub update_ms: Option<u64>,             // None: no more updates (!setUpdate -1)
+    pub background: Option<Background>,     // BackgroundMode 0 or 2 (None = 1: nothing painted)
     pub bevel: Option<meter::Bevel>,        //BevelType, BevelColor, BevelColor2, (BackgroudMode=2 only)
     pub width: i32,
     pub height: i32,
@@ -111,11 +122,12 @@ pub struct Skin {
     pub source: Rc<str>,                    // the log source: config and file, like illustro\Clock\Clock.ini
     pub groups: Groups,                     // Group= of [Rainmeter]; the manager adds the settins file's
     pub tooltip_hidden: bool,               // [Rainmeter] ToolTipHidden: the default for meters that don't set their own
+    pub context: HashMap<String, String>,   // ContextTitle/ContextAction (2, 3, ...) of [Rainmeter], raw, keys lowercase
 }
 
 impl Skin {
-    // The action a mouse event at (x, y) in the window runs, if any,
-    // with the name of the section it belongs to
+    /*  The action a mouse event at (x, y) in the window runs, if any,
+        with the name of the section it belongs to */
     pub fn action_at(&self, x: f64, y: f64, event: MouseEvent) -> Option<(&str, &str)> {
         meter::action_at(&self.meters, &self.mouse, &self.measures, x, y, event)
     }
@@ -126,9 +138,9 @@ impl Skin {
         meter::next_move_action(&mut self.meters, &mut self.mouse, &mut self.mouse_over, &self.measures, pos, step)
     }
 
-    // Fills in [#Var] and [&Measure] in an action just before it runs, so it sees the latest
-    // !SetVariable and the values of that moment. `section` is the action's own section,
-    // for [#CURRENTSECTION].
+    /*  Fills in [#Var] and [&Measure] in an action just before it runs, so it sees the latest
+        !SetVariable and the values of that moment. `section` is the action's own section,
+        for [#CURRENTSECTION]. */
     pub fn expand_action(&self, section: &str, text: &str) -> String {
         let has_sections = text.contains("[&");
         if !has_sections && !text.contains("[#") && !text.contains("[\\") && !text.contains("[$") {
@@ -150,11 +162,28 @@ impl Skin {
         self.meters.iter_mut().find(|m| m.name().eq_ignore_ascii_case(name))
     }
 
-    // The Disabled/Paused state of the measure called `name`, for bangs like
-    // !DisableMeasure. Names ignore case, as in Rainmeter.
+    /*  The Disabled/Paused state of the measure called `name`, for bangs like
+        !DisableMeasure. Names ignore case, as in Rainmeter. */
     pub fn measure_switch(&mut self, name: &str) -> Option<&mut Switch> {
         let m = self.measures.iter_mut().find(|m| m.name().eq_ignore_ascii_case(name))?;
         m.switch_mut()
+    }
+    // The skin's own right-click menu items, read now, with the variables of the moment
+    pub fn context_items(&self) -> Vec<ContextItem> {
+        read_context_items(|key| self.context_option(key))
+    }
+
+    // The action of custom menu item n, read when it's clicked, as in Rainmeter
+    pub fn context_action(&self, n: usize) -> Option<String> {
+        let action = self.context_option(&context_key("contextaction", n));
+        (!action.is_empty()).then_some(action)
+    }
+
+    // one Context... option with #var#, [#var] and [&measure] filled in; "" when not set
+    fn context_option(&self, key: &str) -> String {
+        let Some(raw) = self.context.get(key) else { return String::new() };
+        let text = ini::resolve(raw, &section_vars(&self.vars, "Rainmeter"));
+        self.expand_action("Rainmeter", &text)
     }
 }
 
@@ -203,17 +232,53 @@ pub fn window_size(meters: &[Meter], measures: &[Box<dyn Measure>], fixed: (i32,
     (side(right, fixed.0), side(bottom, fixed.1))
 }
 
-// The variables as one section sees them: everything, plus #CURRENTSECTION#
-// set to that section's name. Being a normal variable, it also works inside
-// other variables and options inherited through MeterStyle.
+/*  The variables as one section sees them: everything, plus #CURRENTSECTION#
+    set to that section's name. Being a normal variable, it also works inside
+    other variables and options inherited through MeterStyle. */
 fn section_vars(vars: &HashMap<String, String>, name: &str) -> HashMap<String, String> {
     let mut own = vars.clone();
     own.insert("currentsection".to_string(), name.to_string());
     own
 }
 
-// Every section by lowercase name, built once so MeterStyle lookups don't scan the file.
-// If a name appears twice, the first one wins.
+// the option name for item n: "contexttitle" for the first, then "contexttitle2", ...
+fn context_key(base: &str, n: usize) -> String {
+    if n == 1 { base.to_string() } else { format!("{base}{n}") }
+}
+
+/*  The custom menu items, Rainmeter's AppendSkinCustomMenu: ContextTitle/ContextAction,
+    then ContextTitle2/ContextAction2 and so on, up to 25. The list stops at the first empty
+    title, or at the title without an action (a title made only of dashes is a separator and
+    needs none). Titles are cut to 30 characters. 'option' reads one option by name. */
+fn read_context_items(option: impl Fn(&str) -> String) -> Vec<ContextItem> {
+    let mut items = Vec::new();
+    for n in 1..=MAX_CONTEXT_ITEMS {
+        let title = option(&context_key("contexttitle", n));
+        let separator = !title.is_empty() && title.chars().all(|c| c =='-');
+        if title.is_empty() || (!separator && option(&context_key("contextaction", n)).is_empty()) {
+            break;
+        }
+        items.push(if separator {
+            ContextItem::Separator
+        } else {
+            ContextItem::Action { n, title: ellipsis(&title, 30) }
+        });
+    }
+    items
+}
+
+// Rainmeter's TruncateWithEllipsis: a text longer than 'max' characters keeps max -1 and get "..."
+fn ellipsis(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let mut cut: String = text.chars().take(max - 1).collect();
+    cut.push('…');
+    cut
+}
+
+/*  Every section by lowercase name, built once so MeterStyle lookups don't scan the file.
+    If a name appears twice, the first one wins. */
 fn section_index(all: &[ini::Section]) -> HashMap<String, &ini::Section> {
     let mut index = HashMap::new();
     for s in all {
@@ -222,8 +287,8 @@ fn section_index(all: &[ini::Section]) -> HashMap<String, &ini::Section> {
     index
 }
 
-// MeterStyle=Parent1|Parent2: builds the meter's full set of options.
-// Later parents beat earlier ones, and the meter's own options beat them all.
+/*  MeterStyle=Parent1|Parent2: builds the meter's full set of options.
+    Later parents beat earlier ones, and the meter's own options beat them all. */
 fn apply_meter_styles(
     section: &ini::Section,
     index: &HashMap<String, &ini::Section>,
@@ -234,8 +299,8 @@ fn apply_meter_styles(
     if let Some(list) = section.options.get("meterstyle") {
         let list = ini::resolve(list, vars);
         let mut names = list.split('|').map(str::trim).filter(|n| !n.is_empty());
-        // by_ref(): take() uses up only the first MAX_STYLES names and leaves the rest
-        // in `names`, so they can be counted below without ever being stored
+        /*  by_ref(): take() uses up only the first MAX_STYLES names and leaves the rest
+            in `names`, so they can be counted below without ever being stored */
         for name in names.by_ref().take(MAX_STYLES) {
             let Some(parent) = index.get(&name.to_lowercase()) else {
                 section_log(Level::Error, &section.name, &format!("MeterStyle '{name}' not found, ignoring it"));
@@ -260,9 +325,9 @@ fn apply_meter_styles(
         }
     }
 
-    // The meter's own options win over everything it inherited. Inherited options
-    // still hold #CURRENTSECTION# as text; it becomes the child's name when the
-    // meter resolves its options with its own section_vars.
+    /*  The meter's own options win over everything it inherited. Inherited options
+        still hold #CURRENTSECTION# as text; it becomes the child's name when the
+        meter resolves its options with its own section_vars. */
     for (k, v) in &section.options {
         options.insert(k.clone(), v.clone());
     }
@@ -281,8 +346,8 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
     // Folder of this .ini; images and other files are looked up relative to it
     let base_dir = skin_file.parent().unwrap_or(Path::new("/")).to_path_buf();
 
-    // The "root config" is the top-level folder under Skins (Rainmeter's ROOTCONFIGPATH).
-    // A skin opened from outside the skins folder uses its own folder instead.
+    /*  The "root config" is the top-level folder under Skins (Rainmeter's ROOTCONFIGPATH).
+        A skin opened from outside the skins folder uses its own folder instead. */
     let root_config = match skin_file.strip_prefix(skins_root) {
         Ok(rel) => {
             let parts: Vec<_> = rel.components().collect();
@@ -347,8 +412,8 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         .unwrap_or_default();
     vars.extend(builtin);
 
-    // [#Name] inside [Variables] values is filled in now, as Rainmeter does when it reads
-    // that section. Plain #Name# stays, and is still followed later wherever it's used.
+    /*  [#Name] inside [Variables] values is filled in now, as Rainmeter does when it reads
+        that section. Plain #Name# stays, and is still followed later wherever it's used. */
     let snapshot = vars.clone();
     for value in vars.values_mut() {
         if value.contains("[#") || value.contains("[\\") {
@@ -375,8 +440,8 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
             }
         };
 
-        // MinValue / MaxValue override the measure's own range. Every measure gets a
-        // Ranged, so a later !SetOption can add them.
+        /*  MinValue / MaxValue override the measure's own range. Every measure gets a
+            Ranged, so a later !SetOption can add them. */
         let mut ranged = Ranged::wrap(inner);
         ranged.read_range(section, &vars);
 
@@ -401,8 +466,8 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         .and_then(|v| formula::parse_number(&ini::resolve(v, &vars)).ok())
         .is_some_and(|n| n != 0.0);
 
-    // Pass 2: meters, in order. Each is placed as soon as it is built, so [MeterName:X]
-    // and relative positions (X=10R) can use the meters before it.
+    /*  Pass 2: meters, in order. Each is placed as soon as it is built, so [MeterName:X]
+        and relative positions (X=10R) can use the meters before it. */
     let mut meters: Vec<Meter> = Vec::new();
     let mut layout = Layout::new();
     let index = section_index(&ini.sections);
@@ -444,8 +509,8 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
     let groups = Groups::read_group(&get("group").unwrap_or_default());
     // ToolTipHidden=1: tooltips off for every meter that doesn't turn its own back on
     let tooltip_hidden = int("tooltiphidden") != 0;
-    // Left,Top,Right,Bottom: whole numbers, formulas allowed; missing = 0
-    // (DragMargins, BackgroundMargins: both use Rainmeter's ReadRECT)
+    /*  Left,Top,Right,Bottom: whole numbers, formulas allowed; missing = 0
+        (DragMargins, BackgroundMargins: both use Rainmeter's ReadRECT) */
     let rect = |key: &str| {
         let mut r = [0; 4];
         if let Some(v) = get(key) {
@@ -500,8 +565,8 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         .map(|s| MouseActions::read(s, &section_vars(&vars, &s.name)))
         .unwrap_or_default();
 
-    //The [Rainmeter] action. Like the mouse action, #Var# is filled in now and
-    //[#Var] when they run; an empty one counts as not set.
+    /*  The [Rainmeter] action. Like the mouse action, #Var# is filled in now and
+        [#Var] when they run; an empty one counts as not set. */
     let rm_vars = section_vars(&vars, "Rainmeter");
     let action = |key: &str| {
         rm.and_then(|s| s.options.get(key))
@@ -514,12 +579,18 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
     let on_focus = action("onfocusaction");
     let on_unfocus = action("onunfocusaction");
 
+    /*   ContextTitle / ContextAction (2, 3, ...) are kept raw: the menu reads them each time it
+        opens, with the variables of the moment, and !SetOption can change them */
+    let context: HashMap<String, String> = rm
+        .map(|s| s.options.iter().filter(|(k, _)| k.starts_with("context")).map(|(k, v)| (k.clone(), v.clone())).collect())
+        .unwrap_or_default();
+
     let (width, height) = window_size(&meters, &measures, fixed_size, background.as_ref(), background_margins);
     let source = log_source(&config, skin_file);
     Ok(Skin {
         measures,
         meters,
-        update_ms: update_ms.max(50),
+        update_ms: Some(update_ms.max(50)),
         background,
         bevel,
         width,
@@ -543,6 +614,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         source,
         groups,
         tooltip_hidden,
+        context,
     })
 }
 
@@ -696,5 +768,26 @@ mod tests {
         let merged = apply_meter_styles(all.last().unwrap(), &section_index(&all), &no_vars());
         assert_eq!(get(&merged, "o15"), Some("1"));
         assert_eq!(get(&merged, "o16"), None);
+    }
+
+    #[test]
+    fn context_items_follow_rainmeter() {
+        let read = |pairs: &[(&str, &str)]| {
+            let map: HashMap<String, String> = pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+            read_context_items(|key| map.get(key).cloned().unwrap_or_default())
+        };
+        let items = read(&[
+            ("contexttitle", "Open"), ("contextaction", "[!Log 1]"),
+            ("contexttitle2", "---"), // a separator needs no action
+            ("contexttitle3", "A very long title that goes on and on"), ("contextaction3", "[!Log 3]"),
+            ("contexttitle4", "No action"), // a title without an action ends the list
+            ("contexttitle5", "never seen"), ("contextaction5", "[!Log 5]"),
+        ]);
+        assert_eq!(items, vec![
+            ContextItem::Action { n: 1, title: "Open".into() },
+            ContextItem::Separator,
+            ContextItem::Action { n: 3, title: "A very long title that goes o…".into() },
+        ]);
+        assert!(read(&[("contextaction", "[!Log 1]")]).is_empty(), "no first title: no items");
     }
 }

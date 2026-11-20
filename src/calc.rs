@@ -170,8 +170,8 @@ impl Measure for CalcMeasure {
         format_number(self.value)
     }
 
-    // As in Rainmeter's MeasureCalc::ReadOptions: the counter and the range seen so far
-    // carry on; a new Random is drawn only if the formula, the bounds or UpdateRandom changed
+    /*  As in Rainmeter's MeasureCalc::ReadOptions: the counter and the range seen so far
+        carry on; a new Random is drawn only if the formula, the bounds or UpdateRandom changed */
     fn reread(&mut self, section: &Section, vars: &HashMap<String, String>) {
         let fresh = CalcMeasure::from_options(section, vars);
         let changed = fresh.formula != self.formula

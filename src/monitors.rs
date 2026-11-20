@@ -1,18 +1,18 @@
 use gtk4::gdk;
 use gtk4::prelude::*;
 
-// Built-in variables for the monitors: #SCREENAREAWIDTH#, #WORKAREAX@2#, #VSCREENAREAHEIGHT#, ...
-// Keys are lowercase like the rest of the variable table.
-//
-// Rainmeter's plain #SCREENAREA...# means the skin's own monitor. Wayland doesn't tell us
-// where a window is, so it means the primary one here, and the primary is the first
-// monitor (Wayland has no "primary"). The work area (screen minus panels) isn't
-// available from GTK4 either, so for now it is the whole screen.
-//
-// Returns nothing when GTK isn't started (as in `cargo test`) or there is no monitor.
-//
-// Positions count from the primary's top-left corner, as on Windows, so the primary is
-// always at 0,0 and a monitor left of it has a negative X.
+/*  Built-in variables for the monitors: #SCREENAREAWIDTH#, #WORKAREAX@2#, #VSCREENAREAHEIGHT#, ...
+    Keys are lowercase like the rest of the variable table.
+
+    Rainmeter's plain #SCREENAREA...# means the skin's own monitor. Wayland doesn't tell us
+    where a window is, so it means the primary one here, and the primary is the first
+    monitor (Wayland has no "primary"). The work area (screen minus panels) isn't
+    available from GTK4 either, so for now it is the whole screen.
+
+    Returns nothing when GTK isn't started (as in `cargo test`) or there is no monitor.
+
+    Positions count from the primary's top-left corner, as on Windows, so the primary is
+    always at 0,0 and a monitor left of it has a negative X. */
 pub fn screen_vars() -> Vec<(String, String)> {
     let all = monitor_rects();
     let Some((virtual_screen, rects)) = all.split_first() else {
@@ -38,10 +38,10 @@ pub fn screen_vars() -> Vec<(String, String)> {
     vars
 }
 
-// The monitors numbered as Rainmeter's @N counts them: [0] is the rectangle that covers
-// every monitor (@0), then [1] the primary, [2] the next, and so on.
-// Positions count from the primary's top-left, as in screen_vars.
-// Empty when GTK isn't started (as in `cargo test`) or there is no monitor.
+/*  The monitors numbered as Rainmeter's @N counts them: [0] is the rectangle that covers
+    every monitor (@0), then [1] the primary, [2] the next, and so on.
+    Positions count from the primary's top-left, as in screen_vars.
+    Empty when GTK isn't started (as in `cargo test`) or there is no monitor. */
 pub fn monitor_rects() -> Vec<gdk::Rectangle> {
     let (ox, oy) = origin();
     let rects: Vec<gdk::Rectangle> = gtk_rects()
@@ -62,21 +62,21 @@ pub fn monitor_rects() -> Vec<gdk::Rectangle> {
     all
 }
 
-// Where the primary monitor's top-left corner is, in GTK's coordinates.
-// Windows counts positions from there, so we subtract it everywhere.
-// (0, 0) when GTK isn't started or there is no monitor.
+/*  Where the primary monitor's top-left corner is, in GTK's coordinates.
+    Windows counts positions from there, so we subtract it everywhere.
+    (0, 0) when GTK isn't started or there is no monitor. */
 pub fn origin() -> (i32, i32) {
     gtk_rects().first().map_or((0, 0), |r| (r.x(), r.y()))
 }
 
-// Every monitor's rectangle as GTK gives it (top-left of the whole desktop = 0,0).
-// Empty when GTK isn't started (as in `cargo test`) or there is no display.
+/*  Every monitor's rectangle as GTK gives it (top-left of the whole desktop = 0,0).
+    Empty when GTK isn't started (as in `cargo test`) or there is no display. */
 fn gtk_rects() -> Vec<gdk::Rectangle> {
     gtk_monitors().iter().map(|m| m.geometry()).collect()
 }
 
-// Every monitor as GTK knows it, in GTK's order (the first is our primary).
-// Empty when GTK isn't started (as in `cargo test`) or there is no display.
+/*  Every monitor as GTK knows it, in GTK's order (the first is our primary).
+    Empty when GTK isn't started (as in `cargo test`) or there is no display. */
 pub fn gtk_monitors() -> Vec<gdk::Monitor> {
     if !gtk4::is_initialized() {
         return Vec::new();

@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 
 const MAX_DEPTH: usize = 6;
 
-// Where the settings live. If ~/Rainmeter/Rainmeter.ini exists we use it, so a Rainmeter
-// setup copied over from Windows just works. Otherwise we use our own
-// ~/Snowmeter/Snowmeter.ini. The folder also holds the default Skins folder.
+/*  Where the settings live. If ~/Rainmeter/Rainmeter.ini exists we use it, so a Rainmeter
+    setup copied over from Windows just works. Otherwise we use our own
+    ~/Snowmeter/Snowmeter.ini. The folder also holds the default Skins folder. */
 #[derive(Clone)]
 pub struct Config {
     pub dir: PathBuf,          // ~/Rainmeter or ~/Snowmeter
@@ -39,8 +39,8 @@ pub fn find_config() -> Config {
 }
 
 impl Config {
-    // The first run makes Snowmeter.ini with an empty [Snowmeter] section.
-    // (A Rainmeter.ini is never created: it's only used when it already exists.)
+    /*  The first run makes Snowmeter.ini with an empty [Snowmeter] section.
+        (A Rainmeter.ini is never created: it's only used when it already exists.) */
     pub fn create_if_missing(&self) -> Result<(), String> {
         if self.file.exists() {
             return Ok(());
@@ -99,8 +99,8 @@ pub fn ensure_skins_dir(dir: &Path) -> Result<PathBuf, String> {
         .map_err(|e| format!("Cannot open skins folder {}: {}", dir.display(), e))
 }
 
-// Remembers a skins folder for future runs by writing SkinPath= into the config file.
-// Only that one line changes: the rest of the file (a real Rainmeter.ini has a lot) is kept.
+/*  Remembers a skins folder for future runs by writing SkinPath= into the config file.
+    Only that one line changes: the rest of the file (a real Rainmeter.ini has a lot) is kept. */
 pub fn save_skins_dir(dir: &Path, cfg: &Config) -> Result<PathBuf, String> {
     let root = ensure_skins_dir(dir)?;
     let path = root.to_string_lossy().to_string();
@@ -124,9 +124,9 @@ fn header_name(line: &str) -> Option<&str> {
     (t.starts_with('[') && t.ends_with(']')).then(|| t[1..t.len() - 1].trim())
 }
 
-// Sets key=value inside [section] and leaves every other line alone. Replaces the key's
-// line if the section has one, else adds it after the section's last line, else adds
-// the section at the end of the file. Names are compared case-insensitively, like INI reading.
+/*  Sets key=value inside [section] and leaves every other line alone. Replaces the key's
+    line if the section has one, else adds it after the section's last line, else adds
+    the section at the end of the file. Names are compared case-insensitively, like INI reading. */
 fn set_option(text: &str, section: &str, key: &str, value: &str) -> String {
     let mut lines: Vec<String> = text.lines().map(String::from).collect();
     let new_line = format!("{}={}", key, value);
@@ -213,8 +213,8 @@ pub fn resolve_skin(arg: &str, root: &Path) -> Result<PathBuf, String> {
     find_in_skins(arg, root)
 }
 
-// A skin file inside the skins folder: Config\Skin\File.ini, any capitalization.
-// Never anything outside it, so skins' own bangs can use this safely.
+/*  A skin file inside the skins folder: Config\Skin\File.ini, any capitalization.
+    Never anything outside it, so skins' own bangs can use this safely. */
 pub fn find_in_skins(arg: &str, root: &Path) -> Result<PathBuf, String> {
     let found = paths::find_file(root, arg)
         .ok_or_else(|| format!("Skin '{}' not found (looked in {})", arg, root.display()))?;
@@ -229,8 +229,8 @@ pub fn find_in_skins(arg: &str, root: &Path) -> Result<PathBuf, String> {
     Ok(found)
 }
 
-// The .ini files directly inside one config folder, in Rainmeter's order. Active=N in
-// the settings file counts from 1 in this list.
+/*  The .ini files directly inside one config folder, in Rainmeter's order. Active=N in
+    the settings file counts from 1 in this list. */
 pub fn config_files(root: &Path, config: &str) -> Vec<String> {
     let wanted = config.trim().replace('/', "\\").to_lowercase();
     list_skins(root)
@@ -243,8 +243,63 @@ pub fn config_files(root: &Path, config: &str) -> Vec<String> {
         .collect()
 }
 
-// Writes Active=N into the config's [section] (0 = not loaded), keeping the rest of the file.
-// The section is named like Rainmeter's: [illustro\Clock].
+/*  One folder of the skins tree, as in Rainmeter's Skins menu: the .ini files directly in 
+    it, and its subfolders. Only folders with a skin somewhere below them are in the tree. */
+pub struct SkinFolder {
+    pub name: String,
+    pub files: Vec<String>,
+    pub folders: Vec<SkinFolder>,
+}
+
+// Every skin under the skins folder, as a tree of folders (see tree_from)
+pub fn skin_tree(root: &Path) -> Vec<SkinFolder> {
+    tree_from(&list_skins(root))
+}
+
+/*  Builds the tree from list_skins' paths ("illustro/Clock/Clock.ini"), sorted by name
+    ignoring case. A backup folder at top is left out, as in Rainmeter (its installer
+    keeps the old version of skins there). */
+fn tree_from(skins: &[String]) -> Vec<SkinFolder> {
+    let mut top = Vec::new();
+    for skin in skins {
+        let parts: Vec<&str> = skin.split(['/', '\\']).collect();
+        let Some((file, folders)) = parts.split_last() else { continue };
+        if folders.first().is_none_or(|f| f.eq_ignore_ascii_case("backup")) {
+            continue; // a file right in the skins folder isn't a skin
+        }
+        add_to_tree(&mut top, folders, file);
+    }
+    sort_tree(&mut top);
+    top
+}
+
+// Puts 'file' in the folder that 'folders' names, making the folders on the way as needed
+fn add_to_tree(list: &mut Vec<SkinFolder>, folders: &[&str], file: &str) {
+    let Some((first, rest)) = folders.split_first() else { return };
+    let index = match list.iter().position(|f| f.name == *first) {
+        Some(i) => i,
+        None => {
+            list.push(SkinFolder { name: first.to_string(), files: Vec::new(), folders: Vec::new() });
+            list.len() -1
+        }
+    };
+    if rest.is_empty() {
+        list[index].files.push(file.to_string());
+    } else {
+        add_to_tree(&mut list[index].folders, rest, file);
+    }
+}
+
+fn sort_tree(list: &mut [SkinFolder]) {
+    list.sort_by_key(|f| f.name.to_lowercase());
+    for folder in list {
+        folder.files.sort_by_key(|f| f.to_lowercase());
+        sort_tree(&mut folder.folders);
+    }
+}
+
+/*  Writes Active=N into the config's [section] (0 = not loaded), keeping the rest of the file.
+    The section is named like Rainmeter's: [illustro\Clock]. */
 pub fn save_active(cfg: &Config, config: &str, index: usize) -> Result<(), String> {
     save_options(cfg, config, &[("Active", index.to_string())])
 }
@@ -277,8 +332,8 @@ fn save_options(cfg: &Config, config: &str, options: &[(&str, String)]) -> Resul
 // A config's window settings, from its [section] in the settings file
 #[derive(Debug, Clone)]
 pub struct SkinSettings {
-    // WindowX, WindowY, AnchorX and AnchorY as written, such as "10%R@2" (position.rs reads
-    // them). A missing one is "0", Rainmeter's default.
+    /*  WindowX, WindowY, AnchorX and AnchorY as written, such as "10%R@2" (position.rs reads
+        them). A missing one is "0", Rainmeter's default. */
     pub position: Options,
     pub z: ZPos,             // AlwaysOnTop=, default 0 (Normal)
     pub draggable: bool,     // Draggable=, default 1
@@ -288,8 +343,8 @@ pub struct SkinSettings {
     pub group: String,       // Group=: the config's groups (the skin file can add more)
 }
 
-// Reads a config's window settings, reading the file once. Missing ones get
-// Rainmeter's defaults, and so does everything when the file can't be read.
+/*  Reads a config's window settings, reading the file once. Missing ones get
+    Rainmeter's defaults, and so does everything when the file can't be read. */
 pub fn read_skin_settings(cfg: &Config, config: &str) -> SkinSettings {
     let text = textfile::read_text(&cfg.file).unwrap_or_default();
     let ini = Ini::parse(&text);
@@ -321,10 +376,10 @@ pub fn read_position(cfg: &Config, config: &str) -> Options {
     read_skin_settings(cfg, config).position
 }
 
-// Writes the window settings that are missing from the config's [section], with the
-// values `s` has for them (their defaults, since they're missing). Settings already in
-// the file are left alone. As in Rainmeter's ReadOptions/WriteOptions, this gives a newly
-// loaded skin a full set of settings to edit.
+/*  Writes the window settings that are missing from the config's [section], with the
+    values `s` has for them (their defaults, since they're missing). Settings already in
+    the file are left alone. As in Rainmeter's ReadOptions/WriteOptions, this gives a newly
+    loaded skin a full set of settings to edit. */
 pub fn save_missing_settings(cfg: &Config, config: &str, s: &SkinSettings) -> Result<(), String> {
     let text = if cfg.file.exists() { textfile::read_text(&cfg.file)? } else { String::new() };
     let ini = Ini::parse(&text);
@@ -347,8 +402,8 @@ pub fn save_missing_settings(cfg: &Config, config: &str, s: &SkinSettings) -> Re
     save_options(cfg, config, &missing)
 }
 
-// Every config with a valid Active=N: the skin files to load at start-up.
-// As in Rainmeter, a number outside 1..=(number of files) is ignored.
+/*  Every config with a valid Active=N: the skin files to load at start-up.
+    As in Rainmeter, a number outside 1..=(number of files) is ignored. */
 pub fn active_skins(cfg: &Config, root: &Path) -> Vec<PathBuf> {
     let Ok(text) = textfile::read_text(&cfg.file) else { return Vec::new() };
     let ini = Ini::parse(&text);
@@ -450,4 +505,50 @@ mod tests {
         assert_eq!(fs::read_to_string(&cfg.file).unwrap(), text);
         fs::remove_dir_all(&base).unwrap();
     }
+
+    #[test]
+    fn skins_make_a_tree() {
+        let skins: Vec<String> = [
+            "illustro/Clock/Clock.ini",
+            "Suite/Main.ini",
+            "Suite/Parts/Bar.ini",
+            "Suite/Parts/Deep/Deep.ini",
+            "Suite/Alt.ini",
+            "Backup/Old/Old.ini",
+            "Loose.ini",
+            "Clock-x/A.ini",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let tree = tree_from(&skins);
+        let names: Vec<&str> = tree.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["Clock-x", "illustro", "Suite"], "by name, no backup, no loose file");
+        assert!(tree[1].files.is_empty(), "illustro holds only a folder");
+        assert_eq!(tree[1].folders[0].files, ["Clock.ini"]);
+        let suite = &tree[2];
+        assert_eq!(suite.files, ["Alt.ini", "Main.ini"]);
+        assert_eq!(suite.folders[0].name, "Parts");
+        assert_eq!(suite.folders[0].files, ["Bar.ini"]);
+        assert_eq!(suite.folders[0].folders[0].files, ["Deep.ini"]);
+    }
+    
+    #[test]
+    fn folders_without_skins_stay_out() {
+        let root = env::temp_dir().join(format!("snowmeter-test-tree-{}", std::process::id()));
+        for dir in ["Suite/Clock", "Suite/@Resources", "NoSkin", "Empty/Inner"] {
+            fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        fs::write(root.join("Suite/Clock/Clock.ini"), "").unwrap();
+        fs::write(root.join("Suite/@Resources/Vars.ini"), "").unwrap();
+        fs::write(root.join("NoSkin/NoSkin.txt"), "").unwrap();
+
+        let tree = skin_tree(&root);
+        let names: Vec<&str> = tree.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["Suite"], "NoSkin has no .ini, Empty has no files at all");
+        let below: Vec<&str> = tree[0].folders.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(below, ["Clock"], "@Resources isn't a skin folder");
+        fs::remove_dir_all(&root).unwrap();
+    }
+
 }

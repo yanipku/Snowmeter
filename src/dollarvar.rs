@@ -1,11 +1,11 @@
-// Rainmeter's [$Skin…] and [$Display…] variables: the running skin's position and size,
-// and the monitors. Examples: [$SkinX], [$SkinZPos], [$DisplayW], [$Display2WorkAreaH],
-// [$DisplayCount], [$DisplayVirtualScreenW]. Follows ConfigParser::GetDollarSkinVariable
-// and GetDollarDisplayVariable.
-//
-// The skin code doesn't know its window, so the window sets a SkinInfo with with_skin()
-// while its skin updates, runs an action or loads, and lookup() reads it. Outside of that
-// the variables are unknown, and stay as written.
+/*  Rainmeter's [$Skin…] and [$Display…] variables: the running skin's position and size,
+    and the monitors. Examples: [$SkinX], [$SkinZPos], [$DisplayW], [$Display2WorkAreaH],
+    [$DisplayCount], [$DisplayVirtualScreenW]. Follows ConfigParser::GetDollarSkinVariable
+    and GetDollarDisplayVariable.
+
+    The skin code doesn't know its window, so the window sets a SkinInfo with with_skin()
+    while its skin updates, runs an action or loads, and lookup() reads it. Outside of that
+    the variables are unknown, and stay as written. */
 use crate::position::ZPos;
 use gtk4::gdk;
 use gtk4::prelude::*; // brings in MonitorExt: scale_factor(), model(), connector()
@@ -34,13 +34,13 @@ pub fn with_skin<R>(info: SkinInfo, f: impl FnOnce() -> R) -> R {
     result
 }
 
-// The value of [$name] ("SkinX", "Display2W", …; case doesn't matter), or None if the
-// name is unknown or no skin is being worked on
+/*  The value of [$name] ("SkinX", "Display2W", …; case doesn't matter), or None if the
+    name is unknown or no skin is being worked on */
 pub fn lookup(name: &str) -> Option<String> {
     let info = CURRENT.get()?;
     let name = name.to_ascii_lowercase();
-    // The same lists as monitors::monitor_rects() and gtk_monitors(): [0] of rects covers
-    // every monitor, then both list the monitors, the primary first
+    /*  The same lists as monitors::monitor_rects() and gtk_monitors(): [0] of rects covers
+        every monitor, then both list the monitors, the primary first */
     let rects = crate::monitors::monitor_rects();
     let monitors = crate::monitors::gtk_monitors();
     if let Some(rest) = name.strip_prefix("skin") {
@@ -71,8 +71,8 @@ fn skin_var(rest: &str, info: &SkinInfo, rects: &[gdk::Rectangle], monitors: &[g
     }
 }
 
-// [$DisplayX], [$Display2Name], [$DisplayDevice1DpiFactor], [$DisplayWorkAreaPhysicalH],
-// [$DisplayCount], [$DisplayVirtualScreenW], …
+/*  [$DisplayX], [$Display2Name], [$DisplayDevice1DpiFactor], [$DisplayWorkAreaPhysicalH],
+    [$DisplayCount], [$DisplayVirtualScreenW], …  */
 fn display_var(rest: &str, info: &SkinInfo, rects: &[gdk::Rectangle], monitors: &[gdk::Monitor]) -> Option<String> {
     let mut rest = rest;
     let mut index = take_number(&mut rest);
@@ -95,8 +95,8 @@ fn display_var(rest: &str, info: &SkinInfo, rects: &[gdk::Rectangle], monitors: 
         }
     }
 
-    // A numbered monitor, else the skin's own one. One that doesn't exist reads as zeros,
-    // as in Rainmeter.
+    /*  A numbered monitor, else the skin's own one. One that doesn't exist reads as zeros,
+        as in Rainmeter. */
     let number = match index {
         Some(n) => (n >= 1 && n <= monitors.len()).then_some(n),
         None => skin_monitor(info, rects),
@@ -119,8 +119,8 @@ fn display_var(rest: &str, info: &SkinInfo, rects: &[gdk::Rectangle], monitors: 
     }
 }
 
-// "x", "y", "w" or "h" of `rect`, times `scale` (the monitor's scale factor, for the
-// Physical variables). Anything else: None.
+/*  "x", "y", "w" or "h" of `rect`, times `scale` (the monitor's scale factor, for the
+    Physical variables). Anything else: None. */
 fn component(rest: &str, rect: &gdk::Rectangle, scale: i32) -> Option<String> {
     let v = match rest {
         "x" => rect.x(),

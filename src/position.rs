@@ -1,8 +1,8 @@
-// The forms Rainmeter's WindowX= and WindowY= can take: 200, 50%, 20R (from the right),
-// 30B (from the bottom), and @2 (on monitor 2), in any mix, such as 10%R@2.
-// This file only does the arithmetic; monitors.rs says where the monitors are.
-// AnchorX= and AnchorY= pick the point of the skin that is placed there (default: its
-// top-left corner). Follows Rainmeter's SkinPosition.cpp.
+/*  The forms Rainmeter's WindowX= and WindowY= can take: 200, 50%, 20R (from the right),
+    30B (from the bottom), and @2 (on monitor 2), in any mix, such as 10%R@2.
+    This file only does the arithmetic; monitors.rs says where the monitors are.
+    AnchorX= and AnchorY= pick the point of the skin that is placed there (default: its
+    top-left corner). Follows Rainmeter's SkinPosition.cpp. */
 use gtk4::gdk::Rectangle;
 
 // A skin's position options, as written in the settings file
@@ -32,8 +32,8 @@ pub enum ZPos {
 }
 
 impl ZPos {
-    // Read like Rainmeter's ReadInt (the whole number at the start); a value outside
-    // -2..=2, or no number at all, is Normal
+    /*  Read like Rainmeter's ReadInt (the whole number at the start); a value outside
+        -2..=2, or no number at all, is Normal */
     pub fn parse(text: &str) -> ZPos {
         crate::sectionvar::leading_int(text).map_or(ZPos::Normal, ZPos::from_number)
     }
@@ -73,11 +73,11 @@ pub struct Axis {
 }
 
 impl Axis {
-    // Reads an option such as "10%R@2". `end_char` is 'R' for WindowX and 'B' for WindowY.
-    // `monitors` is how many monitors there are: an @N past that is ignored, as in Rainmeter.
+    /*  Reads an option such as "10%R@2". `end_char` is 'R' for WindowX and 'B' for WindowY.
+        `monitors` is how many monitors there are: an @N past that is ignored, as in Rainmeter. */
     pub fn parse(text: &str, end_char: char, monitors: usize) -> Axis {
-        // The number: the leading run of "-0123456789.", read like C's wtof
-        // (as much of it as makes a number, else 0)
+        /*  The number: the leading run of "-0123456789.", read like C's wtof
+            (as much of it as makes a number, else 0) */
         let run_len = text.find(|c: char| !"-0123456789.".contains(c)).unwrap_or(text.len());
         let run = &text[..run_len];
         let value = (0..=run.len()).rev().find_map(|end| run[..end].parse::<f32>().ok()).unwrap_or(0.0);
@@ -101,9 +101,9 @@ impl Axis {
         Axis { value, percent, from_end, end_char, monitor, anchor: 0 }
     }
 
-    // Reads AnchorX/AnchorY for a skin `size` pixels wide (or tall): 30 (pixels), 50%
-    // (of the skin), 10R / 10B (from the skin's right or bottom edge). Unlike WindowX,
-    // there is no minus sign and no '#' rule, as in Rainmeter's ParseAnchorOption.
+    /*  Reads AnchorX/AnchorY for a skin `size` pixels wide (or tall): 30 (pixels), 50%
+        (of the skin), 10R / 10B (from the skin's right or bottom edge). Unlike WindowX,
+        there is no minus sign and no '#' rule, as in Rainmeter's ParseAnchorOption. */
     pub fn set_anchor(&mut self, text: &str, size: i32) {
         let run_len = text.find(|c: char| !"0123456789.".contains(c)).unwrap_or(text.len());
         let run = &text[..run_len];
@@ -117,16 +117,16 @@ impl Axis {
         self.anchor = n as i32;
     }
 
-    // The window's position in pixels, on a monitor that starts at `start` and is `len` wide
-    // (or tall, for Y). `as i32` drops the fraction, like the (int) cast in Rainmeter.
-    // The anchor point lands there, so the window's edge is `anchor` pixels before it.
+    /*  The window's position in pixels, on a monitor that starts at `start` and is `len` wide
+        (or tall, for Y). `as i32` drops the fraction, like the (int) cast in Rainmeter.
+        The anchor point lands there, so the window's edge is `anchor` pixels before it. */
     pub fn resolve(&self, start: i32, len: i32) -> i32 {
         let offset = if self.percent { (len as f32 * (self.value / 100.0)) as i32 } else { self.value as i32 };
         start + if self.from_end { len - offset } else { offset } - self.anchor
     }
 
-    // The option text for a window at `pos`, written in this axis's form:
-    // the reverse of resolve(). Percentages get 5 decimals, as in Rainmeter.
+    /*  The option text for a window at `pos`, written in this axis's form:
+        the reverse of resolve(). Percentages get 5 decimals, as in Rainmeter. */
     pub fn to_option(&self, pos: i32, start: i32, len: i32) -> String {
         let offset = if self.from_end { start + len - pos - self.anchor } else { pos - start + self.anchor };
         let mut text = if self.percent {
@@ -144,23 +144,23 @@ impl Axis {
     }
 }
 
-// Where the window's top-left corner goes, for a skin `size` (width, height) big.
-// `rects` is monitors::monitor_rects(): [0] all monitors, [1] the primary, then the others.
+/*  Where the window's top-left corner goes, for a skin `size` (width, height) big.
+    `rects` is monitors::monitor_rects(): [0] all monitors, [1] the primary, then the others. */
 pub fn resolve(opts: &Options, size: (i32, i32), rects: &[Rectangle]) -> (i32, i32) {
     let ((ax, rx), (ay, ry)) = parse_both(opts, size, rects);
     (ax.resolve(rx.x(), rx.width()), ay.resolve(ry.y(), ry.height()))
 }
 
-// The reverse of resolve(): the WindowX= and WindowY= texts for a window now at `pos`,
-// written in the form of the old ones, on the same monitor
+/*  The reverse of resolve(): the WindowX= and WindowY= texts for a window now at `pos`,
+    written in the form of the old ones, on the same monitor */
 pub fn to_options(opts: &Options, pos: (i32, i32), size: (i32, i32), rects: &[Rectangle]) -> (String, String) {
     let ((ax, rx), (ay, ry)) = parse_both(opts, size, rects);
     (ax.to_option(pos.0, rx.x(), rx.width()), ay.to_option(pos.1, ry.y(), ry.height()))
 }
 
-// !Move X Y: the options for a window whose top-left corner is at (x, y), counted from
-// the primary monitor. As in Rainmeter, they become plain pixel numbers (any %, R, B or @N
-// form is dropped), with the anchor added back, since resolve() takes it off again.
+/*  !Move X Y: the options for a window whose top-left corner is at (x, y), counted from
+    the primary monitor. As in Rainmeter, they become plain pixel numbers (any %, R, B or @N
+    form is dropped), with the anchor added back, since resolve() takes it off again. */
 pub fn moved(opts: &Options, (x, y): (i32, i32), size: (i32, i32)) -> Options {
     let mut ax = Axis::parse("0", 'R', 0);
     let mut ay = Axis::parse("0", 'B', 0);
@@ -169,8 +169,8 @@ pub fn moved(opts: &Options, (x, y): (i32, i32), size: (i32, i32)) -> Options {
     Options { x: (x + ax.anchor).to_string(), y: (y + ay.anchor).to_string(), ..opts.clone() }
 }
 
-// Parses the options, and pairs each axis with its monitor's rectangle: the @N one, else
-// the primary; a zero-size one if GTK gave us no monitors
+/*  Parses the options, and pairs each axis with its monitor's rectangle: the @N one, else
+    the primary; a zero-size one if GTK gave us no monitors */
 fn parse_both(opts: &Options, size: (i32, i32), rects: &[Rectangle]) -> ((Axis, Rectangle), (Axis, Rectangle)) {
     let count = rects.len().saturating_sub(1);
     let mut ax = Axis::parse(&opts.x, 'R', count);
@@ -183,11 +183,11 @@ fn parse_both(opts: &Options, size: (i32, i32), rects: &[Rectangle]) -> ((Axis, 
     ((ax, rx), (ay, ry))
 }
 
-// KeepOnScreen: where a window `size` big at `pos` must go to be fully on a monitor.
-// `monitors` are the monitors only (monitor_rects() without [0]), the primary first.
-// As in Rainmeter's ClampPositionToScreenBounds: the monitor that holds the window's
-// centre, else one of its corners (top-left, bottom-right, bottom-left, top-right);
-// a window on none of them is pushed onto the primary.
+/*  KeepOnScreen: where a window `size` big at `pos` must go to be fully on a monitor.
+    `monitors` are the monitors only (monitor_rects() without [0]), the primary first.
+    As in Rainmeter's ClampPositionToScreenBounds: the monitor that holds the window's
+    centre, else one of its corners (top-left, bottom-right, bottom-left, top-right);
+    a window on none of them is pushed onto the primary. */
 pub fn keep_on_screen(pos: (i32, i32), size: (i32, i32), monitors: &[Rectangle]) -> (i32, i32) {
     let ((x, y), (w, h)) = (pos, size);
     let points = [(x + w / 2, y + h / 2), (x, y), (x + w, y + h), (x, y + h), (x + w, y)];
@@ -205,9 +205,9 @@ pub fn keep_on_screen(pos: (i32, i32), size: (i32, i32), monitors: &[Rectangle])
 // How close, in pixels, an edge must come before SnapEdges lines it up (Rainmeter's g_SnapDistance)
 const SNAP_DISTANCE: i32 = 10;
 
-// SnapEdges: where a window `size` big that is being moved to `pos` snaps to. It lines up
-// with the edges of the `others` (the other skins' rectangles), then with the edges of the
-// monitor it overlaps most. Follows Rainmeter's OnWindowPosChanging and SnapToWindow.
+/*  SnapEdges: where a window `size` big that is being moved to `pos` snaps to. It lines up
+    with the edges of the `others` (the other skins' rectangles), then with the edges of the
+    monitor it overlaps most. Follows Rainmeter's OnWindowPosChanging and SnapToWindow. */
 pub fn snap(pos: (i32, i32), size: (i32, i32), others: &[Rectangle], monitors: &[Rectangle]) -> (i32, i32) {
     let ((mut x, mut y), (w, h)) = (pos, size);
     // Within SNAP_DISTANCE of `edge`, either side (not counting exactly that far)

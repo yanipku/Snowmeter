@@ -1,15 +1,15 @@
-// Window positions on X11. GTK4 has no way to read or set where a window is, and on
-// Wayland no program may, so this asks the X server directly. Every function quietly
-// does nothing on Wayland, or when libX11 can't be loaded.
-// GTK has deprecated its X11 backend (4.18), so all of it is kept in this one file.
+/*  Window positions on X11. GTK4 has no way to read or set where a window is, and on
+    Wayland no program may, so this asks the X server directly. Every function quietly
+    does nothing on Wayland, or when libX11 can't be loaded.
+    GTK has deprecated its X11 backend (4.18), so all of it is kept in this one file. */
 use crate::position::ZPos;
 use gdk4_x11::x11::xlib;
 use gdk4_x11::{X11Display, X11Surface};
 use gtk4::prelude::*;
 
 thread_local! {
-    // libX11, loaded the first time it's needed. GTK runs on one thread, so a
-    // thread_local is enough; None if the library isn't there.
+    /*  libX11, loaded the first time it's needed. GTK runs on one thread, so a
+        thread_local is enough; None if the library isn't there. */
     static XLIB: Option<xlib::Xlib> = xlib::Xlib::open().ok();
 }
 
@@ -22,21 +22,21 @@ fn x11_handles(window: &impl IsA<gtk4::Window>) -> Option<(*mut xlib::Display, x
 fn surface_handles(surface: &gdk4_x11::gdk::Surface) -> Option<(*mut xlib::Display, xlib::Window)> {
     let surface = surface.clone().downcast::<X11Surface>().ok()?;
     let display = surface.display().downcast::<X11Display>().ok()?;
-    // Safety: the pointer belongs to GTK's open X connection, which stays open while the
-    // window exists. We only pass it to Xlib, never free it.
+    /*  Safety: the pointer belongs to GTK's open X connection, which stays open while the
+        window exists. We only pass it to Xlib, never free it. */
     let xdisplay = unsafe { display.xdisplay() };
     Some((xdisplay, surface.xid()))
 }
 
-// The screen position of the window's top-left corner, counted from the primary
-// monitor's top-left as on Windows (see monitors::origin)
+/*  The screen position of the window's top-left corner, counted from the primary
+    monitor's top-left as on Windows (see monitors::origin) */
 pub fn position(window: &impl IsA<gtk4::Window>) -> Option<(i32, i32)> {
     let (display, xwindow) = x11_handles(window)?;
     XLIB.with(|x| {
         let x = x.as_ref()?;
         let (mut sx, mut sy, mut child) = (0, 0, 0);
-        // Safety: display and xwindow are valid (see x11_handles); the out-pointers are
-        // our own locals. Converts the window's (0, 0) into root-window (screen) coordinates.
+        /*  Safety: display and xwindow are valid (see x11_handles); the out-pointers are
+            our own locals. Converts the window's (0, 0) into root-window (screen) coordinates. */
         let ok = unsafe {
             let root = (x.XDefaultRootWindow)(display);
             (x.XTranslateCoordinates)(display, xwindow, root, 0, 0, &mut sx, &mut sy, &mut child)
@@ -46,16 +46,16 @@ pub fn position(window: &impl IsA<gtk4::Window>) -> Option<(i32, i32)> {
     })
 }
 
-// Moves a window that is already on screen to (x, y), counted from the primary monitor's
-// top-left. Does nothing on Wayland.
+/*  Moves a window that is already on screen to (x, y), counted from the primary monitor's
+    top-left. Does nothing on Wayland. */
 pub fn move_to(window: &impl IsA<gtk4::Window>, (x, y): (i32, i32)) {
     let Some((display, xwindow)) = x11_handles(window) else { return };
     let (ox, oy) = crate::monitors::origin();
     move_xwindow(display, xwindow, x + ox, y + oy);
 }
 
-// Calls `moved` each time the window is moved or resized. X sends a ConfigureNotify event
-// for that; during a drag many arrive each second, so the caller should wait for them to stop.
+/*  Calls `moved` each time the window is moved or resized. X sends a ConfigureNotify event
+    for that; during a drag many arrive each second, so the caller should wait for them to stop. */
 pub fn on_moved(window: &impl IsA<gtk4::Window>, moved: impl Fn() + 'static) {
     let moved = std::rc::Rc::new(moved);
     window.as_ref().connect_realize(move |w| {
@@ -63,8 +63,8 @@ pub fn on_moved(window: &impl IsA<gtk4::Window>, moved: impl Fn() + 'static) {
         let Some((_, xwindow)) = surface_handles(&surface) else { return };
         let Ok(display) = surface.display().downcast::<X11Display>() else { return };
         let moved = moved.clone();
-        // Safety: GTK passes a valid event for the length of the call, and we only read it.
-        // XEvent is a C union: the `type_` field says which of its members is filled in.
+        /*  Safety: GTK passes a valid event for the length of the call, and we only read it.
+            XEvent is a C union: the `type_` field says which of its members is filled in. */
         let id = unsafe {
             display.connect_xevent(move |_, event| {
                 let event = &*event;
@@ -84,19 +84,24 @@ pub fn on_moved(window: &impl IsA<gtk4::Window>, moved: impl Fn() + 'static) {
     });
 }
 
-// Moves the window to (x, y) once it is really on screen.
-// (x, y) count from the primary monitor's top-left, as position() returns them.
+/*  Moves the window to (x, y) once it is really on screen, and again once the window
+    manager has taken it over: some window managers, such as GNOME's Mutter, place a 
+    new window themselves after it is shown and undo the first move. With no window
+    manager (a bare Xephyr), only the first move happens.
+    (x, y) count from the primary monitor's top-left, as position() returns them. */
 pub fn move_when_shown(window: &impl IsA<gtk4::Window>, x: i32, y: i32) {
-    when_shown(window, move |display, xwindow| {
+    let go = move |display: *mut xlib::Display, xwindow: xlib::Window| {
         let (ox, oy) = crate::monitors::origin();
         move_xwindow(display, xwindow, x + ox, y + oy);
-    });
+    };
+    when_shown(window, go);
+    when_managed(window, go);
 }
 
-// Once the window manager has the window, asks it to keep it above or below other
-// windows (AlwaysOnTop), and to leave it out of the taskbar and the workspace switcher,
-// as Rainmeter skins are on Windows. X11 has no "topmost" or "on desktop" level of its
-// own, so Topmost is the same as OnTop, and OnDesktop the same as Bottom.
+/* Once the window manager has the window, asks it to keep it above or below other
+    windows (AlwaysOnTop), and to leave it out of the taskbar and the workspace switcher,
+    as Rainmeter skins are on Windows. X11 has no "topmost" or "on desktop" level of its
+    own, so Topmost is the same as OnTop, and OnDesktop the same as Bottom. */
 pub fn set_z_pos_when_managed(window: &impl IsA<gtk4::Window>, z: ZPos) {
     when_managed(window, move |display, xwindow| {
         if let Some(level) = level_state(z) {
@@ -106,8 +111,8 @@ pub fn set_z_pos_when_managed(window: &impl IsA<gtk4::Window>, z: ZPos) {
     });
 }
 
-// Moves a shown window from AlwaysOnTop `old` to `new` (!ZPos): takes the old state off,
-// then puts the new one on
+/*  Moves a shown window from AlwaysOnTop `old` to `new` (!ZPos): takes the old state off,
+    then puts the new one on */
 pub fn change_z_pos(window: &impl IsA<gtk4::Window>, old: ZPos, new: ZPos) {
     let Some((display, xwindow)) = x11_handles(window) else { return };
     if let Some(state) = level_state(old) {
@@ -131,9 +136,9 @@ fn level_state(z: ZPos) -> Option<&'static str> {
 const REMOVE: std::ffi::c_long = 0;
 const ADD: std::ffi::c_long = 1;
 
-// Runs `f` once, when the window is really on screen. The window manager sets a new
-// window up as it appears, so a move made before that can be undone;
-// GTK sets the surface's "mapped" property when it asks for the window to be shown.
+/*  Runs `f` once, when the window is really on screen. The window manager sets a new
+    window up as it appears, so a move made before that can be undone;
+    GTK sets the surface's "mapped" property when it asks for the window to be shown. */
 fn when_shown(window: &impl IsA<gtk4::Window>, f: impl Fn(*mut xlib::Display, xlib::Window) + 'static) {
     let f = std::rc::Rc::new(f);
     // The surface exists from "realize" on, which comes just before the window is shown
@@ -152,11 +157,11 @@ fn when_shown(window: &impl IsA<gtk4::Window>, f: impl Fn(*mut xlib::Display, xl
     });
 }
 
-// Runs `f` once, when the window manager has taken the window over. "Mapped" (above) is
-// too early for that: the window manager then rewrites the window's states and drops
-// what we asked for. The X11 rules (ICCCM) say a window manager puts a WM_STATE property
-// on each window it takes over, and X tells us when a property changes, so we wait for that.
-// With no window manager, WM_STATE never comes and `f` never runs.
+/*  Runs `f` once, when the window manager has taken the window over. "Mapped" (above) is
+    too early for that: the window manager then rewrites the window's states and drops
+    what we asked for. The X11 rules (ICCCM) say a window manager puts a WM_STATE property
+    on each window it takes over, and X tells us when a property changes, so we wait for that.
+    With no window manager, WM_STATE never comes and `f` never runs. */
 fn when_managed(window: &impl IsA<gtk4::Window>, f: impl Fn(*mut xlib::Display, xlib::Window) + 'static) {
     let f = std::rc::Rc::new(f);
     window.as_ref().connect_realize(move |w| {
@@ -196,15 +201,15 @@ fn intern_atom(display: *mut xlib::Display, name: &str) -> Option<xlib::Atom> {
         let lib = lib.as_ref()?;
         // Our names are constants with no NUL in them, so CString::new can't fail
         let name = std::ffi::CString::new(name).unwrap();
-        // Safety: display is valid (see x11_handles); name is a NUL-terminated string
-        // that lives until the call returns. 0 = create the atom if it doesn't exist yet.
+        /*  Safety: display is valid (see x11_handles); name is a NUL-terminated string
+            that lives until the call returns. 0 = create the atom if it doesn't exist yet. */
         Some(unsafe { (lib.XInternAtom)(display, name.as_ptr(), 0) })
     })
 }
 
-// Asks the window manager to add (ADD) or take off (REMOVE) one or two states of a managed window.
-// A program may not change that property itself once the window is managed: the
-// standard (EWMH) says to send the window manager a ClientMessage on the root window.
+/*  Asks the window manager to add (ADD) or take off (REMOVE) one or two states of a managed window.
+    A program may not change that property itself once the window is managed: the
+    standard (EWMH) says to send the window manager a ClientMessage on the root window. */
 fn change_states(display: *mut xlib::Display, xwindow: xlib::Window, how: std::ffi::c_long, first: &str, second: Option<&str>) {
     let atom = |name: &str| intern_atom(display, name).unwrap_or(0) as std::ffi::c_long;
     let mut message = xlib::XClientMessageEvent {

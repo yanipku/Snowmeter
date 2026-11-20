@@ -1,5 +1,5 @@
-// Action strings, such as LeftMouseUpAction=[!ShowMeter A][!Redraw], and the bangs in them.
-// Follows Rainmeter's CommandHandler::ExecuteCommand (Library/CommandHandler.cpp).
+/*  Action strings, such as LeftMouseUpAction=[!ShowMeter A][!Redraw], and the bangs in them.
+    Follows Rainmeter's CommandHandler::ExecuteCommand (Library/CommandHandler.cpp).*/
 
 use crate::formula;
 use crate::position::ZPos;
@@ -14,11 +14,19 @@ pub enum After {
     Nothing,
     Redraw,                 // !Redraw: paint the skin as it is now
     Update,                 // !Update: a full update straight away, then paint
-    UpdateMeter(Pick),    // !UpdateMeter Name: update the meters it picks now; no repaint
-    UpdateMeasure(Pick),  // !UpdateMeasure Name: the same for a measure
+    SetUpdate(Option<u64>), // !SetUpdate N: the new Update rate in ms (None = no more updates)
+    UpdateMeter(Pick),      // !UpdateMeter Name: update the meters it picks now; no repaint
+    UpdateMeasure(Pick),    // !UpdateMeasure Name: the same for a measure
     Refresh,                // !Refresh: read the skin file again from scratch
+    Menu(Menu),             // !SkinMenu / !SkinCustomMenu: only the window can show a menu
     Config(ConfigBang),     // a bang that loads or unloads skins: only the manager can do it
     Window(WindowBang),     // a bang that changes a window setting: only the window can do it
+}
+// which menu !SkinMenu / !SkinCustomMenu shows
+#[derive(Debug, PartialEq)]
+pub enum Menu {
+    Skin,       // !SkinMenu: the whole right-click menu
+    Custom,     // !SkinCustomMenu: only the skin's ContextTitle items
 }
 // which meter or measure !UpdateMeter / !UpdateMeasure (and their group forms) work on
 #[derive(Debug, PartialEq)]
@@ -41,8 +49,8 @@ impl Pick {
     }
 }
 
-// !ZPos, !Draggable, !ClickThrough, !KeepOnScreen, !SnapEdges, !Move. For the settings, the
-// number is the bang's argument: 1 on, 0 off, -1 toggle (any other number counts as on).
+/*  !ZPos, !Draggable, !ClickThrough, !KeepOnScreen, !SnapEdges, !Move. For the settings, the
+    number is the bang's argument: 1 on, 0 off, -1 toggle (any other number counts as on). */
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum WindowBang {
     ZPos(ZPos),
@@ -77,11 +85,12 @@ pub enum Target {
     Nowhere,        // a group bang without its group: Rainmeter reports it and runs nothing
 }
 
-// How many arguments each bang takes. One more is the config to run it on, and
-// "*" or "" means all skins (Rainmeter's DoBang). None: a bang we don't know yet.
+/*  How many arguments each bang takes. One more is the config to run it on, and
+    "*" or "" means all skins (Rainmeter's DoBang). None: a bang we don't know yet. */
 fn arg_count(bang: &str) -> Option<usize> {
     match bang {
         "redraw" | "update" | "refresh" => Some(0),
+        "skinmenu" | "skincustommenu" => Some(0),
         "showmeter" | "hidemeter" | "togglemeter" => Some(1),
         "showmetergroup" | "hidemetergroup" | "togglemetergroup" => Some(1),
         "enablemeasure" | "disablemeasure" | "togglemeasure" => Some(1),
@@ -92,6 +101,7 @@ fn arg_count(bang: &str) -> Option<usize> {
         "pausemeasuregroup" | "unpausemeasuregroup" | "togglepausemeasuregroup" => Some(1),
         "zpos" | "changezpos" | "draggable" | "clickthrough" | "keeponscreen" | "snapedges" => Some(1),
         "setvariable" | "move" => Some(2),
+        "setupdate" => Some(1),
         "setoption" => Some(3),
         "setoptiongroup" => Some(3),
         "commandmeasure" | "commandmeasuregroup" => Some(2),
@@ -133,8 +143,8 @@ pub fn target(cmd: &str) -> Target {
     }
 }
 
-// Runs one command from an action. Only a few bangs are supported so far;
-// the others, and programs, are reported and skipped.
+/*  Runs one command from an action. Only a few bangs are supported so far;
+    the others, and programs, are reported and skipped. */
 pub fn execute(skin: &mut Skin, cmd: &str) -> After {
     let Some((name, args)) = parse_bang(cmd) else {
         skin_log(Level::Warning, &format!("Running programs isn't supported yet: {cmd}"));
@@ -286,7 +296,16 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
             } else if let Some(switch) = skin.measure_switch(section) {
                 switch.set_option(key, value);
             } else if section.eq_ignore_ascii_case("rainmeter") {
-                skin_log(Level::Warning, &format!("!{name} on [Rainmeter] isn't supported yet"));
+                /*  Only ContextTitle/ContextAction (2, 3, ...) change while the skin runs, as in 
+                    Rainmeter; an empty value removes the option. seen when the menu next open. */
+                let key = key.to_lowercase();
+                if !key.starts_with("context") {
+                    skin_log(Level::Warning, &format!("!{name}: [Rainmeter] {key} can't be changed while the skin runs"));
+                } else if value.is_empty() {
+                    skin.context.remove(&key);
+                } else {
+                    skin.context.insert(key, value.clone());
+                }
             } else {
                 skin_log(Level::Error, &format!("!{name}: [{section}] not found"));
             }
@@ -313,6 +332,15 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
         }
         "redraw" => After::Redraw,
         "update" => After::Update,
+        "setupdate" => {
+            let Some(arg) = args.first() else {
+                skin_log(Level::Error, &format!("!{name}: Incorrect number of arguments"));
+                return After::Nothing;
+            };
+            // Rainmeter's ParseInt: a number or a (formula), else 1000; -1 or less stop updates
+            let n = formula::parse_number(arg).map_or(1000, |n| n as i32);
+            After::SetUpdate(if n < 0 { None } else { Some((n as u64).max(50)) })
+        }
         "updatemeter" | "updatemeasure" => {
             let Some(arg) = args.first() else {
                 skin_log(Level::Error, &format!("!{name}: Incorrect number of arguments"));
@@ -322,6 +350,8 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
             if lower == "updatemeter" {After::UpdateMeter(pick)} else { After::UpdateMeasure(pick) }
         }
         "refresh" => After::Refresh,
+        "skinmenu" => After::Menu(Menu::Skin),
+        "skincustommenu" => After::Menu(Menu::Custom),
         "activateconfig" | "toggleconfig" => {
             let Some(config) = args.first().cloned() else {
                 skin_log(Level::Error, &format!("!{name}: Invalid parameters"));
@@ -394,12 +424,12 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
     }
 }
 
-// Splits an action into the commands it runs, in order: "[!A][!B]" gives "!A" and "!B".
-// Brackets inside a bang, such as [MeasureCPU] or [#Var], don't end it, and """text"""
-// can hold anything, brackets included. Text between the bracketed bangs is ignored.
-// An action that doesn't start with [ is a single command: a bang ("!Refresh") or a program.
-//
-// The returned commands are slices of `action`, so nothing is copied.
+/*  Splits an action into the commands it runs, in order: "[!A][!B]" gives "!A" and "!B".
+    Brackets inside a bang, such as [MeasureCPU] or [#Var], don't end it, and """text"""
+    can hold anything, brackets included. Text between the bracketed bangs is ignored.
+    An action that doesn't start with [ is a single command: a bang ("!Refresh") or a program.
+
+    The returned commands are slices of `action`, so nothing is copied. */
 pub fn split_bangs(action: &str) -> Vec<&str> {
     let action = action.trim_start();
     if !action.starts_with('[') {
@@ -408,8 +438,8 @@ pub fn split_bangs(action: &str) -> Vec<&str> {
 
     let bytes = action.as_bytes();
     let mut out = Vec::new();
-    // Signed on purpose: as in Rainmeter, a stray ] makes it negative, and the
-    // bangs after it never run. Skins written for Rainmeter rely on the same result.
+    /*  Signed on purpose: as in Rainmeter, a stray ] makes it negative, and the
+        bangs after it never run. Skins written for Rainmeter rely on the same result. */
     let mut depth: i32 = 0;
     let mut start: Option<usize> = None;
     let mut i = 0;
@@ -447,9 +477,9 @@ pub fn split_bangs(action: &str) -> Vec<&str> {
 
 const TRIPLE: &str = r#"""""#;
 
-// Splits one bang into its name and arguments: !SetVariable Color "255, 0, 0" gives
-// ("SetVariable", ["Color", "255, 0, 0"]). None if the command isn't a bang.
-// Section variables in the arguments ([Measure], [#Var]) are left for the bang to expand.
+/*  Splits one bang into its name and arguments: !SetVariable Color "255, 0, 0" gives
+    ("SetVariable", ["Color", "255, 0, 0"]). None if the command isn't a bang.
+    Section variables in the arguments ([Measure], [#Var]) are left for the bang to expand. */
 pub fn parse_bang(cmd: &str) -> Option<(&str, Vec<String>)> {
     let body = cmd.trim_start().strip_prefix('!')?;
     // Old skins write !RainmeterShowMeter for !ShowMeter
@@ -463,11 +493,11 @@ pub fn parse_bang(cmd: &str) -> Option<(&str, Vec<String>)> {
     })
 }
 
-// The arguments of a bang, as Rainmeter's CommandHandler::ParseString reads them:
-//   word      up to the next space; any " inside is removed
-//   "a b"     up to the next "
-//   """a"b""" up to the next """ followed by a space (or else the last """); quotes stay
-// An unclosed quote takes the rest of the text.
+/*  The arguments of a bang, as Rainmeter's CommandHandler::ParseString reads them:
+     word      up to the next space; any " inside is removed
+     "a b"     up to the next "
+     """a"b""" up to the next """ followed by a space (or else the last """); quotes stay
+    An unclosed quote takes the rest of the text. */
 fn parse_args(text: &str) -> Vec<String> {
     let mut args = Vec::new();
     let mut rest = text;
@@ -503,10 +533,10 @@ fn parse_args(text: &str) -> Vec<String> {
     args
 }
 
-// The value !SetVariable and !WriteKeyValue stores. Like Rainmeter's Skin::SetVariable, a value in
-// parentheses is a formula: its result is written with 5 decimals, trailing zeros
-// removed ("3.50000" -> "3.5", "2.00000" -> "2"). Anything else, or a formula with
-// an error, is stored as written.
+/*  The value !SetVariable and !WriteKeyValue stores. Like Rainmeter's Skin::SetVariable, a value in
+    parentheses is a formula: its result is written with 5 decimals, trailing zeros
+    removed ("3.50000" -> "3.5", "2.00000" -> "2"). Anything else, or a formula with
+    an error, is stored as written. */
 fn variable_value(value: &str) -> String {
     if !(value.starts_with('(') && value.ends_with(')')) {
         return value.to_string();

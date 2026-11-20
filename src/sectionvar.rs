@@ -1,5 +1,5 @@
-// Section variables: [MeasureName], [MeasureName:1], [MeasureName:/1024,2], [MeasureName:%],
-// and for meters [MeterName:X], [MeterName:W], ...
+/*  Section variables: [MeasureName], [MeasureName:1], [MeasureName:/1024,2], [MeasureName:%],
+    and for meters [MeterName:X], [MeterName:W], ... */
 use crate::ini;
 use crate::measure::{fraction_in, Sample, Values};
 use std::collections::HashMap;
@@ -30,11 +30,11 @@ pub fn expand(text: &str, values: &Values) -> String {
     expand_with(text, values, &Geometry::new())
 }
 
-// Replaces every [Name...] that names a measure or a meter. Anything else is left exactly
-// as written. The work stays linear even for hostile input.
+/*  Replaces every [Name...] that names a measure or a meter. Anything else is left exactly
+    as written. The work stays linear even for hostile input. */
 pub fn expand_with(text: &str, values: &Values, geom: &Geometry) -> String {
-    // Nothing to expand. An option longer than the cap is also left exactly as written,
-    // so a huge value is never cut short, and hostile input can't cost us much work.
+    /*  Nothing to expand. An option longer than the cap is also left exactly as written,
+        so a huge value is never cut short, and hostile input can't cost us much work. */
     if !text.contains('[') || text.len() > MAX_EXPANDED {
         return text.to_string();
     }
@@ -87,9 +87,9 @@ pub fn lookup_section(inner: &str, values: &Values, geom: &Geometry) -> Option<S
     lookup(inner, values, geom)
 }
 
-// What "Name" or "Name:params" turns into, or None if it isn't a measure or meter we know.
-// Like Rainmeter, the parameters start after the *last* colon, so in
-// [Name:MaxValue:/1024,1] the name part is "Name:MaxValue".
+/*  What "Name" or "Name:params" turns into, or None if it isn't a measure or meter we know.
+    Like Rainmeter, the parameters start after the *last* colon, so in
+    [Name:MaxValue:/1024,1] the name part is "Name:MaxValue". */
 fn lookup(inner: &str, values: &Values, geom: &Geometry) -> Option<String> {
     let (name, params) = match inner.rsplit_once(':') {
         Some((n, p)) => (n, Some(p)),
@@ -102,8 +102,8 @@ fn lookup(inner: &str, values: &Values, geom: &Geometry) -> Option<String> {
     if let Some(rect) = geom.get(&key) {
         return meter_value(rect, params);
     }
-    // [Name:MaxValue:/scale,dec] and [Name:MinValue:...]. Only for parameters that
-    // don't start with a letter, as in Rainmeter ([Name:MaxValue:MaxValue] isn't valid).
+    /*  [Name:MaxValue:/scale,dec] and [Name:MinValue:...]. Only for parameters that
+        don't start with a letter, as in Rainmeter ([Name:MaxValue:MaxValue] isn't valid). */
     let params = params?;
     if params.starts_with(|c: char| c.is_alphabetic()) {
         return None;
@@ -117,8 +117,8 @@ fn lookup(inner: &str, values: &Values, geom: &Geometry) -> Option<String> {
     measure_value(values.get(name.trim())?, base, Some(params))
 }
 
-// [MeterName:X], :Y, :W, :H, :XW, :YH. A meter has no value without a parameter.
-// Like Rainmeter, the result is always a whole number.
+/*  [MeterName:X], :Y, :W, :H, :XW, :YH. A meter has no value without a parameter.
+    Like Rainmeter, the result is always a whole number. */
 fn meter_value(rect: &Rect, params: Option<&str>) -> Option<String> {
     let number = match params?.trim().to_lowercase().as_str() {
         "x" => rect.x,
@@ -132,12 +132,12 @@ fn meter_value(rect: &Rect, params: Option<&str>) -> Option<String> {
     Some(format!("{}", number.round() as i64))
 }
 
-// Follows Rainmeter's GetSectionVariable. The parameters are one of:
-//   (empty) or dec   the number, with dec decimals
-//   %[,dec]          percent of the range (not with MaxValue/MinValue)
-//   /scale[,dec]     the number divided by scale
-//   MaxValue / MinValue
-// Anything else returns None, so the text is left as written.
+/*  Follows Rainmeter's GetSectionVariable. The parameters are one of:
+      (empty) or dec   the number, with dec decimals
+      %[,dec]          percent of the range (not with MaxValue/MinValue)
+      /scale[,dec]     the number divided by scale
+      MaxValue / MinValue
+    Anything else returns None, so the text is left as written. */
 fn measure_value(sample: &Sample, mut base: Base, params: Option<&str>) -> Option<String> {
     // No parameters: the measure's string value
     let Some(params) = params else {
@@ -192,8 +192,8 @@ fn measure_value(sample: &Sample, mut base: Base, params: Option<&str>) -> Optio
     Some(format_decimals(number, decimals))
 }
 
-// [Measure:EscapeRegExp]: a '\' before each character that means something in a regular
-// expression. Like Rainmeter, ']' and '}' are left alone.
+/*  [Measure:EscapeRegExp]: a '\' before each character that means something in a regular
+    expression. Like Rainmeter, ']' and '}' are left alone. */
 fn escape_regexp(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -218,8 +218,8 @@ fn encode_url(s: &str) -> String {
     out
 }
 
-// The whole number at the start of `s`, the way C's wcstol reads it:
-// spaces skipped, an optional sign, then digits. Anything after them is ignored.
+/*  The whole number at the start of `s`, the way C's wcstol reads it:
+    spaces skipped, an optional sign, then digits. Anything after them is ignored. */
 pub fn leading_int(s: &str) -> Option<i32> {
     let s = s.trim_start();
     let sign_len = usize::from(s.starts_with(['+', '-']));
@@ -251,10 +251,10 @@ fn format_decimals(v: f64, decimals: Option<usize>) -> String {
     }
 }
 
-// Expands the section variables in every option value of a section.
-// #Variables# are resolved first, as in Rainmeter, so [#Name:#Digits#]-style mixes work.
-// Then nested [#Variables] and [&Measures], so [Measure[#N]] names a measure by the time
-// it's looked up.
+/*  Expands the section variables in every option value of a section.
+    #Variables# are resolved first, as in Rainmeter, so [#Name:#Digits#]-style mixes work.
+    Then nested [#Variables] and [&Measures], so [Measure[#N]] names a measure by the time
+    it's looked up. */
 pub fn expand_options(
     options: &HashMap<String, String>,
     vars: &HashMap<String, String>,

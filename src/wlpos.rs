@@ -1,16 +1,16 @@
-// Window positions on Wayland. Wayland doesn't let a normal window choose where it goes,
-// but desktop widgets and panels can use the "layer shell" protocol: the window belongs
-// to one monitor, is stuck to its top and left edges, and margins say how far from them.
-// So a position here is a monitor plus two margins, and we always know it, because we set it.
-// GNOME has no layer shell: there, and on X11, setup() returns false and nothing changes.
+/*  Window positions on Wayland. Wayland doesn't let a normal window choose where it goes,
+    but desktop widgets and panels can use the "layer shell" protocol: the window belongs
+    to one monitor, is stuck to its top and left edges, and margins say how far from them.
+    So a position here is a monitor plus two margins, and we always know it, because we set it.
+    GNOME has no layer shell: there, and on X11, setup() returns false and nothing changes. */
 use crate::position::ZPos;
 use gtk4::prelude::*;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 
-// Makes `window` a layer-shell window at (x, y), counted from the primary monitor's
-// top-left like WindowX/WindowY, on the layer that matches AlwaysOnTop.
-// Must run before the window is shown.
-// Returns false (and does nothing) when the desktop has no layer shell.
+/*  Makes `window` a layer-shell window at (x, y), counted from the primary monitor's
+    top-left like WindowX/WindowY, on the layer that matches AlwaysOnTop.
+    Must run before the window is shown.
+    Returns false (and does nothing) when the desktop has no layer shell. */
 pub fn setup(window: &impl IsA<gtk4::Window>, pos: (i32, i32), z: ZPos) -> bool {
     let window = window.as_ref();
     // is_supported() prints a CRITICAL warning when asked on X11, so don't ask there
@@ -29,8 +29,8 @@ pub fn setup(window: &impl IsA<gtk4::Window>, pos: (i32, i32), z: ZPos) -> bool 
     true
 }
 
-// Moves a shown layer-shell window to the layer for `z` (!ZPos). Returns false, doing
-// nothing, for any other window.
+/*  Moves a shown layer-shell window to the layer for `z` (!ZPos). Returns false, doing
+    nothing, for any other window. */
 pub fn set_z_pos(window: &impl IsA<gtk4::Window>, z: ZPos) -> bool {
     let window = window.as_ref();
     if !window.is_layer_window() {
@@ -40,9 +40,9 @@ pub fn set_z_pos(window: &impl IsA<gtk4::Window>, z: ZPos) -> bool {
     true
 }
 
-// The layer for an AlwaysOnTop value. Layer windows are never mixed in with normal ones,
-// only under them all (Bottom) or over them all (Top), so Normal has to be Bottom.
-// The desktop values aren't Background: wallpaper programs draw there and would cover us.
+/*  The layer for an AlwaysOnTop value. Layer windows are never mixed in with normal ones,
+    only under them all (Bottom) or over them all (Top), so Normal has to be Bottom.
+    The desktop values aren't Background: wallpaper programs draw there and would cover us. */
 fn layer(z: ZPos) -> Layer {
     match z {
         ZPos::OnDesktop | ZPos::Bottom | ZPos::Normal => Layer::Bottom,
@@ -51,8 +51,8 @@ fn layer(z: ZPos) -> Layer {
     }
 }
 
-// Moves a layer-shell window so its top-left corner is at (x, y), counted from the primary
-// monitor's top-left. The monitor is the one that holds that point (else the primary).
+/*  Moves a layer-shell window so its top-left corner is at (x, y), counted from the primary
+    monitor's top-left. The monitor is the one that holds that point (else the primary). */
 pub fn move_to(window: &impl IsA<gtk4::Window>, (x, y): (i32, i32)) {
     let window = window.as_ref();
     let (ox, oy) = crate::monitors::origin();
@@ -70,8 +70,8 @@ pub fn move_to(window: &impl IsA<gtk4::Window>, (x, y): (i32, i32)) {
     window.set_margin(Edge::Top, gy - r.y());
 }
 
-// Where a layer-shell window's top-left corner is, counted from the primary monitor's
-// top-left. None for any other window.
+/*  Where a layer-shell window's top-left corner is, counted from the primary monitor's
+    top-left. None for any other window. */
 pub fn position(window: &impl IsA<gtk4::Window>) -> Option<(i32, i32)> {
     let window = window.as_ref();
     if !window.is_layer_window() {

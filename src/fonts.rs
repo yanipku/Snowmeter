@@ -6,12 +6,12 @@ use std::path::Path;
 use crate::log::{skin_log, Level};
 use crate::paths;
 
-// Fontconfig is the C library Cairo uses to turn a font name into a file.
-// GTK already links it, so we only declare the one function we need.
+/*  Fontconfig is the C library Cairo uses to turn a font name into a file.
+    GTK already links it, so we only declare the one function we need. */
 #[link(name = "fontconfig")]
 unsafe extern "C" {
-    // Adds a font file for this program only (nothing is installed).
-    // A null config means the default one, which Cairo uses.
+    /*  Adds a font file for this program only (nothing is installed).
+        A null config means the default one, which Cairo uses. */
     fn FcConfigAppFontAddFile(config: *mut c_void, file: *const c_char) -> c_int;
 }
 
@@ -21,14 +21,14 @@ pub fn add_font_file(path: &Path) -> bool {
     let Ok(file) = CString::new(path.as_os_str().as_bytes()) else {
         return false;
     };
-    // Safety: `file` is a valid NUL-terminated string that outlives the call,
-    // and Fontconfig copies what it needs.
+    /*  Safety: `file` is a valid NUL-terminated string that outlives the call,
+        and Fontconfig copies what it needs. */
     unsafe { FcConfigAppFontAddFile(std::ptr::null_mut(), file.as_ptr()) != 0 }
 }
 
-// Loads a skin's fonts like Rainmeter: every file in @Resources/Fonts/,
-// then LocalFont, LocalFont2, ... until one is missing.
-// `get` reads an option from [Rainmeter] with variables already filled in.
+/*  Loads a skin's fonts like Rainmeter: every file in @Resources/Fonts/,
+    then LocalFont, LocalFont2, ... until one is missing.
+    `get` reads an option from [Rainmeter] with variables already filled in. */
 pub fn load_skin_fonts(resources: &Path, base_dir: &Path, get: impl Fn(&str) -> Option<String>) {
     // The Fonts folder, matched ignoring case like Windows does
     let fonts_dir = fs::read_dir(resources).ok().and_then(|mut entries| {

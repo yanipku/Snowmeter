@@ -167,8 +167,8 @@ fn opt(section: &Section, key: &str, vars: &HashMap<String, String>) -> Option<S
     section.options.get(key).map(|v| ini::resolve(v, vars))
 }
 
-// None if the option is missing or unreadable (unreadable ones are reported).
-// A plain number or a (formula) is accepted, and the result is always finite.
+/*  None if the option is missing or unreadable (unreadable ones are reported).
+    A plain number or a (formula) is accepted, and the result is always finite. */
 fn num_opt(section: &Section, key: &str, vars: &HashMap<String, String>) -> Option<f64> {
     let text = opt(section, key, vars)?;
     match formula::parse_number(&text) {
@@ -212,8 +212,8 @@ fn parse_case(text: &str) -> Option<Case> {
     }
 }
 
-// One character in upper case. Like Windows, a character that would become
-// several (ß -> SS) is kept as it is, so the text never changes length.
+/*  One character in upper case. Like Windows, a character that would become
+    several (ß -> SS) is kept as it is, so the text never changes length. */
 fn upper(c: char) -> char {
     let mut it = c.to_uppercase();
     match (it.next(), it.next()) {
@@ -231,10 +231,10 @@ fn lower(c: char) -> char {
     }
 }
 
-// Proper case: the first letter of each word up, the rest down. Words are runs of
-// letters and digits, with apostrophes inside them (it's, rock’n). A word with no
-// lower-case letter is taken as an acronym (CPU) and left alone.
-// Not covered: the four letters with a separate title form (ǆ gives Ǆ, not ǅ).
+/*  Proper case: the first letter of each word up, the rest down. Words are runs of
+    letters and digits, with apostrophes inside them (it's, rock’n). A word with no
+    lower-case letter is taken as an acronym (CPU) and left alone.
+    Not covered: the four letters with a separate title form (ǆ gives Ǆ, not ǅ). */
 fn proper_case(text: &str) -> String {
     let in_word = |c: char| c.is_alphanumeric() || c == '\'' || c == '\u{2019}';
     let chars: Vec<char> = text.chars().collect();
@@ -275,8 +275,8 @@ fn apply_case(text: &str, case: Case) -> String {
     }
 }
 
-// Prefix + template + Postfix, with %1, %2, ... in the template replaced by the text of
-// the matching measure, then StringCase. As in Rainmeter, Prefix and Postfix are kept as written.
+/*  Prefix + template + Postfix, with %1, %2, ... in the template replaced by the text of
+    the matching measure, then StringCase. As in Rainmeter, Prefix and Postfix are kept as written. */
 fn fill_template(
     prefix: &str,
     template: &str,
@@ -404,9 +404,9 @@ fn parse_pos(text: &str) -> Result<Pos, String> {
     })
 }
 
-// StringAlign as (horizontal, vertical) fractions of the meter's size:
-// 0.0 = left/top, 0.5 = center, 1.0 = right/bottom. "RightCenter" -> (1.0, 0.5).
-// None if the text isn't a valid alignment.
+/*  StringAlign as (horizontal, vertical) fractions of the meter's size:
+    0.0 = left/top, 0.5 = center, 1.0 = right/bottom. "RightCenter" -> (1.0, 0.5).
+    None if the text isn't a valid alignment. */
 fn parse_align(text: &str) -> Option<(f64, f64)> {
     let t = text.trim().to_ascii_lowercase();
     let (h, rest) = if let Some(rest) = t.strip_prefix("left") {
@@ -486,8 +486,8 @@ impl Graph {
         }
     }
 
-    // The value that fills the full height: the biggest sample if AutoScale=1, else 1.0.
-    // History holds each measure's value as a 0.0..1.0 fraction of its MinValue..MaxValue range.
+    /*  The value that fills the full height: the biggest sample if AutoScale=1, else 1.0.
+        History holds each measure's value as a 0.0..1.0 fraction of its MinValue..MaxValue range. */
     fn max(&self) -> f64 {
         if !self.autoscale {
             return 1.0;
@@ -582,8 +582,8 @@ enum Kind {
     },
 }
 
-// What a meter needs to rebuild itself: on every update with DynamicVariables=1, or once
-// after a bang such as !SetOption changes one of its options
+/*  What a meter needs to rebuild itself: on every update with DynamicVariables=1, or once
+    after a bang such as !SetOption changes one of its options */
 #[derive(Clone)] // Rc::make_mut copies it when a bang changes a shared one
 struct Source {
     name: String,
@@ -661,9 +661,9 @@ pub struct Meter {
     measure_idx: Vec<Option<usize>>, // MeasureName, MeasureName2, ... -> index into the measure list
     kind: Kind,
     source: Option<Rc<Source>>, // the options as written (None only in tests)
-    dynamic: bool,              // DynamicVariables=1: rebuild from `source` on every update
-    // Rebuild at the next update even if not dynamic. As in Rainmeter, where !SetOption
-    // turns DynamicVariables on until the options are read again.
+    dynamic: bool,              /*  DynamicVariables=1: rebuild from `source` on every update
+                                    Rebuild at the next update even if not dynamic. As in Rainmeter, where 
+                                    !SetOptionturns DynamicVariables on until the options are read again. */
     reread_once: bool,
     mouse: MouseActions,            // LeftMouseUpAction and the like
     on_update: String,              // OnUpdateAction, #var# filled in (runs even when hidden)
@@ -674,8 +674,8 @@ pub struct Meter {
 }
 
 impl Meter {
-    // Returns None for sections that aren't meters (or aren't supported yet).
-    // `geom` is where the meters before this one are, for [MeterName:X] references.
+    /*  Returns None for sections that aren't meters (or aren't supported yet).
+        `geom` is where the meters before this one are, for [MeterName:X] references. */
     pub fn from_section(
         section: &Section,
         vars: &HashMap<String, String>,
@@ -895,8 +895,8 @@ impl Meter {
         // ToolTipText and frinds (section variables already filled in, as for the other option)
         let tooltip = ToolTip::read(section, vars, base_dir);
 
-        // A rebuilt meter inherits the source; a new one makes it. DynamicVariables is read
-        // again each time, so !SetOption can turn it on or off.
+        /*  A rebuilt meter inherits the source; a new one makes it. DynamicVariables is read
+            again each time, so !SetOption can turn it on or off. */
         let source = match prev {
             Some(p) => p.source.clone(),
             None => Some(Rc::new(Source {
@@ -942,9 +942,9 @@ impl Meter {
         })
     }
 
-    // !ShowMeter / !HideMeter. Like Rainmeter's Meter::Show/Hide, the Hidden option is
-    // changed too, or a rebuild (DynamicVariables=1, !SetOption) would read the old value
-    // back and undo the bang.
+    /*  !ShowMeter / !HideMeter. Like Rainmeter's Meter::Show/Hide, the Hidden option is
+        changed too, or a rebuild (DynamicVariables=1, !SetOption) would read the old value
+        back and undo the bang. */
     pub fn set_hidden(&mut self, hidden: bool) {
         self.hidden = hidden;
         if let Some(src) = self.source.as_mut() {
@@ -953,19 +953,19 @@ impl Meter {
         }
     }
 
-    // !SetVariable: the new value goes into the meter's own copy of the variables. A meter
-    // with DynamicVariables=1 sees it at its next update; others only when something
-    // rebuilds them (!SetOption), as in Rainmeter. `name` must already be lowercase,
-    // like the table keys.
+    /*  !SetVariable: the new value goes into the meter's own copy of the variables. A meter
+        with DynamicVariables=1 sees it at its next update; others only when something
+        rebuilds them (!SetOption), as in Rainmeter. `name` must already be lowercase,
+        like the table keys. */
     pub fn set_variable(&mut self, name: &str, value: &str) {
         if let Some(src) = self.source.as_mut() {
             Rc::make_mut(src).vars.insert(name.to_string(), value.to_string());
         }
     }
 
-    // !SetOption: changes one option as written in the skin, and rebuilds the meter at the
-    // next update, even without DynamicVariables=1 (Rainmeter's Skin::SetOption). An empty
-    // value removes the option, so its default applies again.
+    /*  !SetOption: changes one option as written in the skin, and rebuilds the meter at the
+        next update, even without DynamicVariables=1 (Rainmeter's Skin::SetOption). An empty
+        value removes the option, so its default applies again. */
     pub fn set_option(&mut self, key: &str, value: &str) {
         let Some(src) = self.source.as_mut() else { return };
         let options = &mut Rc::make_mut(src).options;
@@ -1004,8 +1004,8 @@ impl Meter {
         values: &Values,
         geom: &Geometry,
     ) {
-        // DynamicVariables=1 (or a bang asked for it once): read the options again with
-        // the latest values
+        /*  DynamicVariables=1 (or a bang asked for it once): read the options again with
+            the latest values */
         if let Some(src) = self.source.clone().filter(|_| self.dynamic || self.reread_once) {
             let raw = Section { name: src.name.clone(), options: src.options.clone() };
             if let Some(fresh) = Meter::build(
@@ -1063,8 +1063,8 @@ impl Meter {
         }
     }
 
-    // Top-left corner of the meter's box. x and y are the anchor point from X and Y:
-    // a right-aligned string ends at X, so its box starts a whole width to the left.
+    /*  Top-left corner of the meter's box. x and y are the anchor point from X and Y:
+        a right-aligned string ends at X, so its box starts a whole width to the left. */
     fn origin(&self, w: f64, h: f64) -> (f64, f64) {
         let (ax, ay) = self.align();
         (self.x - ax * w, self.y - ay * h)
@@ -1081,8 +1081,8 @@ impl Meter {
         self.padded(self.size(measures))
     }
 
-    // Position and size as other meters see them: a hidden meter has no size
-    // but keeps its position
+    /*  Position and size as other meters see them: a hidden meter has no size
+        but keeps its position */
     fn rect(&self, measures: &[Box<dyn Measure>]) -> Rect {
         let (w, h) = if self.hidden { (0.0, 0.0) } else { self.outer_size(measures) };
         let (x, y) = self.origin(w, h);
@@ -1098,8 +1098,8 @@ impl Meter {
         x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h
     }
 
-    // Bottom-right corner of this meter, used to size the window.
-    // Hidden meters still count, because they may be shown later.
+    /*  Bottom-right corner of this meter, used to size the window.
+        Hidden meters still count, because they may be shown later. */
     pub fn bounds(&self, measures: &[Box<dyn Measure>]) -> (f64, f64) {
         let (w, h) = self.outer_size(measures);
         let (x, y) = self.origin(w, h);
@@ -1111,9 +1111,9 @@ impl Meter {
             return;
         }
 
-        // Shared by every meter type: SolidColor fills the whole box, padding included,
-        // and the content starts inside it at (cx, cy)
-        // Asked once here: for a String meter this builds and measures the text
+        /*  Shared by every meter type: SolidColor fills the whole box, padding included,
+            and the content starts inside it at (cx, cy)
+            Asked once here: for a String meter this builds and measures the text */
         let (cw, ch) = self.size(measures);
         let (ow, oh) = self.padded((cw, ch));
         let (bx, by) = self.origin(ow, oh);
@@ -1132,8 +1132,8 @@ impl Meter {
                 cr.select_font_face(face, *slant, *weight);
                 cr.set_font_size(*size);
                 set_color(cr, color);
-                // The content area comes from W/H (or the text's own size); the text is
-                // aligned inside it, which only matters when W or H is bigger than the text
+                /*  The content area comes from W/H (or the text's own size); the text is
+                    aligned inside it, which only matters when W or H is bigger than the text */
                 let (ax, ay) = self.align();
                 let (tw, th, ascent) = measure_text(face, *slant, *weight, *size, &text);
                 let (_, bh) = text_box(self.accurate_text, *size, &text, (tw, th));
@@ -1264,8 +1264,8 @@ impl Meter {
 
 // ---------- layout ----------
 
-// Works out where each meter goes, in skin order. Relative positions (X=10R) use the meter
-// before; the table of positions is what [MeterName:X] references read.
+/*  Works out where each meter goes, in skin order. Relative positions (X=10R) use the meter
+    before; the table of positions is what [MeterName:X] references read. */
 pub struct Layout {
     geom: Geometry,
     prev: Rect, // the previous meter's position and size
@@ -1276,8 +1276,8 @@ impl Layout {
         Layout { geom: Geometry::new(), prev: Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 } }
     }
 
-    // Starts from where every meter currently is, so a [Meter:X] reference to a meter
-    // further down sees its position from the last update, as in Rainmeter
+    /*  Starts from where every meter currently is, so a [Meter:X] reference to a meter
+        further down sees its position from the last update, as in Rainmeter */
     pub fn seeded(meters: &[Meter], measures: &[Box<dyn Measure>]) -> Layout {
         let mut layout = Layout::new();
         for m in meters {
@@ -1308,8 +1308,8 @@ impl Layout {
         };
         let rect = m.rect(measures);
         self.geom.insert(m.name.to_lowercase(), rect);
-        // Like Rainmeter, the next meter's r/R counts from this meter's X/Y as written
-        // (its anchor), not from its box: a column of centered texts can all use X=0r
+        /*  Like Rainmeter, the next meter's r/R counts from this meter's X/Y as written
+            (its anchor), not from its box: a column of centered texts can all use X=0r */
         self.prev = Rect { x: m.x, y: m.y, ..rect };
     }
 }
@@ -1322,8 +1322,8 @@ pub fn update_all(meters: &mut [Meter], measures: &[Box<dyn Measure>], values: &
     }
 }
 
-/* Updates one meter and places it, and returns its OnUpdateAction (copied, so the caller can
-let go of the skin first). As in Rainmeter, a hidden meter still runs it. */
+/*  Updates one meter and places it, and returns its OnUpdateAction (copied, so the caller can
+    let go of the skin first). As in Rainmeter, a hidden meter still runs it. */
 pub fn update_one(
     m: &mut Meter,
     measures: &[Box<dyn Measure>],
@@ -1336,9 +1336,9 @@ pub fn update_one(
     (!action.is_empty()).then(|| action.to_string())
 }
 
-// The action a mouse event at (x, y) runs, as in Rainmeter's Skin::DoAction. Meters are
-// checked from the last one (drawn on top) back; the first that is visible, under the
-// mouse and has an action for this event wins. Otherwise [Rainmeter]'s own action runs.
+/*  The action a mouse event at (x, y) runs, as in Rainmeter's Skin::DoAction. Meters are
+    checked from the last one (drawn on top) back; the first that is visible, under the
+    mouse and has an action for this event wins. Otherwise [Rainmeter]'s own action runs. */
 pub fn action_at<'a>(
     meters: &'a [Meter],
     skin_mouse: &'a MouseActions,

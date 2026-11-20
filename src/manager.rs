@@ -1,15 +1,16 @@
-// The running skins: one window per config (a folder under Skins, like illustro\Clock),
-// as in Rainmeter, where at most one skin of each config runs at a time.
+/*  The running skins: one window per config (a folder under Skins, like illustro\Clock),
+    as in Rainmeter, where at most one skin of each config runs at a time. */
 use crate::action::{self, After, ConfigBang, Pick, Target, WindowBang};
 use crate::dollarvar::SkinInfo;
 use crate::position::ZPos;
 use crate::config::{self, Config, SkinSettings};
+use crate::lang::tr;
 use crate::meter;
 use crate::mouse::{MouseEvent, Press};
-use crate::skin::{self, Skin};
+use crate::skin::{self, ContextItem, Skin};
 use crate::log::{log, Level};
 use gtk4::prelude::*;
-use gtk4::{gdk, glib, Application, ApplicationWindow, DrawingArea};
+use gtk4::{gdk, gio, glib, Application, ApplicationWindow, DrawingArea};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -19,15 +20,15 @@ use std::time::Duration;
 pub struct Manager {
     app: Application,
     skins_root: PathBuf, // the skins folder
-    cfg: Config,         // the settings file, where Active= is saved; its folder is #SETTINGSPATH#
-    // Keys are lowercase config names. The map holds the only strong reference to each
-    // window's state; the window's own callbacks hold weak ones (see SkinWindow::open).
+    cfg: Config,         /* the settings file, where Active= is saved; its folder is #SETTINGSPATH#
+                            Keys are lowercase config names. The map holds the only strong reference to each
+                            window's state; the window's own callbacks hold weak ones (see SkinWindow::open). */
     skins: RefCell<HashMap<String, Rc<SkinWindow>>>,
 }
 
-// Loads a skin file that has no window yet. [$SkinX] and the others see where its settings
-// will put it, as in Rainmeter, which works the position out from the options as it
-// reads the skin. The size isn't known before loading, so it counts as 0 × 0.
+/*  Loads a skin file that has no window yet. [$SkinX] and the others see where its settings
+    will put it, as in Rainmeter, which works the position out from the options as it
+    reads the skin. The size isn't known before loading, so it counts as 0 × 0. */
 pub fn load_skin(file: &Path, skins_root: &Path, cfg: &Config) -> Result<Skin, String> {
     let folder = file.parent().unwrap_or(Path::new(""));
     let config = folder.strip_prefix(skins_root).unwrap_or(folder).to_string_lossy().replace('/', "\\");
@@ -39,8 +40,8 @@ pub fn load_skin(file: &Path, skins_root: &Path, cfg: &Config) -> Result<Skin, S
     crate::log::with_source(&source, || crate::dollarvar::with_skin(info, || skin::load(file, skins_root, &cfg.dir)))
 }
 
-// ClickThrough: an empty input region, so the mouse goes to the window behind.
-// Some(empty) = nowhere; None would mean the whole window.
+/*  ClickThrough: an empty input region, so the mouse goes to the window behind.
+    Some(empty) = nowhere; None would mean the whole window. */
 fn clear_input_region(surface: &gdk::Surface) {
     surface.set_input_region(Some(&gtk4::cairo::Region::create()));
 }
@@ -50,22 +51,75 @@ fn config_key(config: &str) -> String {
     config.trim().replace('/', "\\").to_lowercase()
 }
 
+/*  Opens a file or folder with the desktop's default program for it, as Windows'
+    ShellExecute does for Rainmeter. GIO asks the desktop which program to use (xdg-mime)
+    and starts it directly, never through a shell. a free function, because the program 
+    menu (Edit settings, Open folder) has no skin window to ask. */
+fn launch_default(path: &Path) -> Result<(), glib::Error> {
+    let uri = gio::File::for_path(path).uri();
+    let context = gdk::Display::default().map(|d| d.app_launch_context());
+    gio::AppInfo::launch_default_for_uri(&uri, context.as_ref())
+}
+
 impl Manager {
     pub fn new(app: &Application, skins_root: &Path, cfg: &Config) -> Rc<Manager> {
-        Rc::new(Manager {
+        let manager = Rc::new(Manager {
             app: app.clone(),
             skins_root: skins_root.to_path_buf(),
             cfg: cfg.clone(),
             skins: RefCell::new(HashMap::new()),
-        })
+        });
+        manager.add_app_actions();
+        manager
     }
 
-    // Shows an already loaded skin in a new window, closing any other skin of its config.
-    // `self: &Rc<Self>` lets the method hand the window a pointer back to the manager.
+    /*  The program menu's commands ("app.exit" and the others), set up for the whole
+        program. Gtk looks "app." actions up on the application, so every skin's menu finds
+        them. They hold a weak ppointer, like the window callbacks do. */
+    fn add_app_actions(self: &Rc<Self>) {
+        let me = Rc::downgrade(self);
+        let add = |name: &str, run: fn(&Rc<Manager>)| {
+            let me = me.clone();
+            let action = gio::SimpleAction::new(name, None);
+            action.connect_activate(move |_, _| {
+                let me = me.clone();
+                /*  Runs once GTK is idle, as Rainmeter post there as messages: the menu that
+                    was clicked finishes closing before any skin goer away. */
+                glib::idle_add_local_once(move || {
+                    if let Some(manager) = me.upgrade() {
+                        run(&manager)
+                    }
+                });
+            });
+            self.app.add_action(&action);
+        };
+        add("exit", |m| m.quit());
+        add("refreshall", |m| {
+            for sw in m.all() {
+                sw.refresh();
+            }
+        });
+        add("editsettings", |m| m.open_default(&m.cfg.file));
+        add("openskinsfolder", |m| m.open_default(&m.skins_root));
+        // Item that don't work yet name this disable action, so GTK greys them out
+        let later = gio::SimpleAction::new("later", None);
+        later.set_enabled(false);
+        self.app.add_action(&later);
+    }
+
+    // Launch_default for the program menu; there's no skin to name in an error
+    fn open_default(&self, path: &Path) {
+        if let Err(e) = launch_default(path) {
+            log(Level::Error, "", &format!("Unable to open{}: {e}", path.display()));
+        }
+    }
+
+    /*  Shows an already loaded skin in a new window, closing any other skin of its config.
+        `self: &Rc<Self>` lets the method hand the window a pointer back to the manager. */
     pub fn add(self: &Rc<Self>, mut skin: Skin) {
         let key = config_key(&skin.config);
-        // Active=N, N counting from 1. A skin opened from outside the skins folder isn't
-        // in the list, so nothing is saved for it.
+        /*  Active=N, N counting from 1. A skin opened from outside the skins folder isn't
+            in the list, so nothing is saved for it. */
         let name = skin.file.file_name().map(|n| n.to_string_lossy().to_lowercase());
         let files = config::config_files(&self.skins_root, &skin.config);
         let settings = config::read_skin_settings(&self.cfg, &skin.config);
@@ -89,8 +143,8 @@ impl Manager {
         if let Some(old) = old {
             old.close();
         }
-        //OnRefreshAction also runs on first load, once the skin is in the list (so bangs
-        // naming its own config find it) and any old skin of its config is gone
+        /*  OnRefreshAction also runs on first load, once the skin is in the list (so bangs
+            naming its own config find it) and any old skin of its config is gone */
         let action = window.skin.borrow().on_refresh.clone();
         window.run_skin_action("Rainmeter", action, &window.in_refresh_action);
     }
@@ -100,9 +154,9 @@ impl Manager {
         self.skins.borrow().get(&config_key(config)).cloned()
     }
 
-    // Loads a skin of `config`. Without a file, the config's first .ini (Rainmeter
-    // would use the one its settings remember; we don't save settings yet).
-    // If that very file already runs, its window is only brought to the front.
+    /*  Loads a skin of `config`. Without a file, the config's first .ini (Rainmeter
+        would use the one its settings remember; we don't save settings yet).
+        If that very file already runs, its window is only brought to the front. */
     fn activate(self: &Rc<Self>, config: &str, file: Option<&str>) -> Result<(), String> {
         let file = match file {
             Some(f) => f.to_string(),
@@ -126,17 +180,17 @@ impl Manager {
         config::config_files(&self.skins_root, config).into_iter().next()
     }
 
-    // Remembers in the settings file which skin of a config runs (0 = none).
-    // A failure is only reported: the skin itself keeps running.
+    /*  Remembers in the settings file which skin of a config runs (0 = none).
+        A failure is only reported: the skin itself keeps running. */
     fn save_active(&self, config: &str, index: usize) {
         if let Err(e) = config::save_active(&self.cfg, config, index) {
             log(Level::Error, "", &format!("Can't save the loaded skins: {e}"));
         }
     }
 
-    // Remembers where a config's window is (WindowX=, WindowY=), keeping the form the
-    // options had (20R stays counted from the right, @2 stays on monitor 2, ...)
-    // `size` is the skin's, for AnchorX/AnchorY.
+    /*  Remembers where a config's window is (WindowX=, WindowY=), keeping the form the
+        options had (20R stays counted from the right, @2 stays on monitor 2, ...)
+        `size` is the skin's, for AnchorX/AnchorY. */
     fn save_position(&self, config: &str, pos: (i32, i32), size: (i32, i32)) {
         let opts = config::read_position(&self.cfg, config);
         let rects = crate::monitors::monitor_rects();
@@ -146,8 +200,8 @@ impl Manager {
         }
     }
 
-    // Closes a config's skin, if it runs. Dropping the last Rc frees everything; when no
-    // window is left, GTK ends the program (later the tray icon will keep it running).
+    /*  Closes a config's skin, if it runs. Dropping the last Rc frees everything; when no
+        window is left, GTK ends the program (later the tray icon will keep it running). */
     fn deactivate(&self, config: &str) {
         let removed = self.skins.borrow_mut().remove(&config_key(config));
         if let Some(sw) = removed {
@@ -256,11 +310,11 @@ struct SkinWindow {
     snap_edges: Cell<bool>,
     click_through: Cell<bool>,
     z: Cell<ZPos>,
-    // Set when the last left press ran a LeftMouseDownAction: as in Rainmeter, that press
-    // doesn't start a drag
+    /*  Set when the last left press ran a LeftMouseDownAction: as in Rainmeter, that press
+        doesn't start a drag */
     press_ran_action: Cell<bool>,
-    // Set while OnUpdateAction / OnRefreshAction runs, so one that !Update / !Refresh
-    // doesn't start itself again forever
+    /*  Set while OnUpdateAction / OnRefreshAction runs, so one that !Update / !Refresh
+        doesn't start itself again forever */
     in_update_action: Cell<bool>,
     in_refresh_action: Cell<bool>,
     // Counts refreshes, so the mouse_move loop can stop when an action refreshed the skin
@@ -273,13 +327,15 @@ struct SkinWindow {
     save_timer: RefCell<Option<glib::SourceId>>,
     // The position last saved or loaded, so a resize alone doesn't write the file
     saved_position: Cell<Option<(i32, i32)>>,
+    // The right-click menu while it's open (None = closed); mouse actions wait until it closes
+    menu: RefCell<Option<gtk4::PopoverMenu>>,
 }
 
 impl SkinWindow {
-    // Rc::new_cyclic hands us a Weak pointer to the SkinWindow before it exists, so the
-    // callbacks can be built with it. They hold Weak, not Rc: the window owns its callbacks,
-    // so a strong pointer back would be a loop that is never freed.
-    // `position` is where WindowX/WindowY put the window.
+    /*  Rc::new_cyclic hands us a Weak pointer to the SkinWindow before it exists, so the
+        callbacks can be built with it. They hold Weak, not Rc: the window owns its callbacks,
+        so a strong pointer back would be a loop that is never freed.
+        `position` is where WindowX/WindowY put the window. */
     fn open(
         app: &Application,
         skin: Skin,
@@ -333,6 +389,7 @@ impl SkinWindow {
                 tip_shown: Cell::new(false),
                 save_timer: RefCell::new(None),
                 saved_position: Cell::new(Some(position)),
+                menu: RefCell::new(None),
             }
         });
         sw.start_timer();
@@ -345,8 +402,8 @@ impl SkinWindow {
             }
         });
 
-        // Stop the theme painting a background: only what draw_func paints shows.
-        // Transparent pixels need a compositor; without one they show as black.
+        /*  Stop the theme painting a background: only what draw_func paints shows.
+            Transparent pixels need a compositor; without one they show as black. */
         let css = gtk4::CssProvider::new();
         // Tooltip icon in theme's colours (symbolic icon are painted in the css colour)
         css.load_from_data(
@@ -377,15 +434,15 @@ impl SkinWindow {
         gtk4::STYLE_PROVIDER_PRIORITY_FALLBACK,
         );
 
-        // Drag with the left button to move the skin. The window manager does the moving,
-        // which is the only way that works on Wayland as well as X11.
+        /*  Drag with the left button to move the skin. The window manager does the moving,
+            which is the only way that works on Wayland as well as X11. */
         let drag = gtk4::GestureDrag::new();
         drag.set_button(gdk::BUTTON_PRIMARY);
         let weak_window = window.downgrade();
         let drag_me = Rc::downgrade(&sw);
         drag.connect_drag_update(move |gesture, dx, dy| {
             let (Some(window), Some(sw)) = (weak_window.upgrade(), drag_me.upgrade()) else { return };
-            if !sw.draggable.get() || sw.press_ran_action.get() {
+            if !sw.draggable.get() || sw.press_ran_action.get() || sw.menu.borrow().is_some() {
                 return;
             }
             // DragMargins: a press outside the drag area never drags (clicks still work)
@@ -401,10 +458,10 @@ impl SkinWindow {
             if !sw.dragged.get() && dx.hypot(dy) < 4.0 {
                 return;
             }
-            // A layer-shell window (Wayland) can't be moved by the window manager: we move
-            // it. dx, dy count from the press point inside the window; once the window has
-            // moved that much, the mouse is over the same point again, so each update only
-            // adds the newest movement.
+            /*  A layer-shell window (Wayland) can't be moved by the window manager: we move
+                it. dx, dy count from the press point inside the window; once the window has
+                moved that much, the mouse is over the same point again, so each update only
+                adds the newest movement. */
             if let Some((wx, wy)) = crate::wlpos::position(&window) {
                 sw.dragged.set(true);
                 // Holding Ctrl or Shift turns snapping off, as in Rainmeter
@@ -435,8 +492,8 @@ impl SkinWindow {
             let Some(sw) = press_me.upgrade() else { return };
             sw.dragged.set(false);
             let button = gesture.current_button();
-            // As on Windows, every second press in a quick series is a double-click, and
-            // without a DoubleClickAction anywhere it counts as a plain press
+            /*  As on Windows, every second press in a quick series is a double-click, and
+                without a DoubleClickAction anywhere it counts as a plain press */
             let mut events = Vec::new();
             if n_press % 2 == 0 {
                 events.extend(MouseEvent::from_button(button, Press::DoubleClick));
@@ -453,11 +510,79 @@ impl SkinWindow {
             if sw.dragged.get() {
                 return; // the skin was moved, not clicked
             }
-            if let Some(event) = MouseEvent::from_button(gesture.current_button(), Press::Up) {
-                sw.mouse_action(x, y, &[event]);
+            let Some(event) = MouseEvent::from_button(gesture.current_button(), Press::Up) else { return };
+            /*  As in Rainmeter, a right-click opens the menu when no RightMouseUpAction ran,
+                and always when Ctrl is held. Ctrl also skips the click's own action, as in Rainmeter. */
+            let ctrl = gesture.current_event_state().contains(gdk::ModifierType::CONTROL_MASK);
+            let ran = !ctrl && sw.mouse_action(x, y, &[event]);
+            if event == MouseEvent::RightUp && !ran {
+                sw.show_menu(x, y);
             }
         });
         window.add_controller(click);
+
+        /*  The right-click menu's command. GTK menu items don't call our functions: each
+            names an action ("skin.refresh"), which GTK looks up in the action groups of the 
+            window the menu opened in. Ours run the same bangs a skin could. */
+        let actions = gio::SimpleActionGroup::new();
+        for (name, bang) in [("refresh", "!Refresh"), ("unload", "!DeactivateConfig")] {
+            let action = gio::SimpleAction::new(name, None);
+            let menu_me = Rc::downgrade(&sw);
+            action.connect_activate(move |_, _| {
+                if let Some(sw) = menu_me.upgrade() {
+                    sw.run_action(bang);
+                }
+            });
+            actions.add_action(&action);
+        }
+        /*  The skin's name opens its folder in the file manager, as in Rainmeter. GIO asks the 
+            desktop which program opens folders (xdg-mine: inode/directory) and starts it directly,
+            never through a shell, so odd characters in a path can't run anything. */
+        let folder = gio::SimpleAction::new("openfolder", None);
+        let folder_me = Rc::downgrade(&sw);
+        folder.connect_activate(move |_, _| {
+            let Some(sw) = folder_me.upgrade() else { return };
+            let folder = sw.skin.borrow().file.parent().map(Path::to_path_buf); //borrow ends here
+            if let Some(folder) = folder {
+                sw.open_default(&folder);
+            }
+        });
+        actions.add_action(&folder);
+        // Edit skin opens the skin's .ini in the desktop's default program for text files
+        let edit = gio::SimpleAction::new("edit", None);
+        let edit_me = Rc::downgrade(&sw);
+        edit.connect_activate(move |_, _| {
+            let Some(sw) = edit_me.upgrade() else { return };
+            let file = sw.skin.borrow().file.clone(); // borrow ends here
+            sw.open_default(&file);
+        });
+        actions.add_action(&edit);
+        /*  The custom items (ContextTitle/ContextAction). They all share one action; the menu item
+            sends its number along (the "target"). the action text is read only now, at the click,
+            as in Rainmeter, so it uses the Variables of this moment. */
+        let context = gio::SimpleAction::new("context", Some(glib::VariantTy::INT32));
+        let context_me = Rc::downgrade(&sw);
+        context.connect_activate(move |_, target| {
+            let Some(sw) = context_me.upgrade() else { return };
+            let Some(n) = target.and_then(|t| t.get::<i32>()) else { return };
+            let action = sw.skin.borrow().context_action(n as usize); // borrow ends here, before run_action
+            if let Some(action) = action {
+                sw.run_action(&action);
+            }
+        });
+        actions.add_action(&context);
+        window.insert_action_group("skin", Some(&actions));
+
+        /*  GTK's rule: a widget with a popover child must give it its size each time the widget
+            is laid out (gtk_popover_present). Buttons do it themselves; a drawing area doesn't, 
+            so without this the menu keeps the too-small size GTK guessed when it first opened. */
+        let present_me = Rc::downgrade(&sw);
+        area.connect_resize(move |_, _, _| {
+            let Some(sw) = present_me.upgrade() else { return };
+            if let Some(menu) = sw.menu.borrow().as_ref() {
+                menu.present();
+            }
+        });
 
         /*  MouseOverAction / MouseLeaveAction. GTK tells us when the mouse comes onto the 
             window (enter), moves orver it (motion) and goes off it (leave). with ClickThrough
@@ -527,13 +652,13 @@ impl SkinWindow {
             crate::x11pos::set_z_pos_when_managed(&window, settings.z);
         }
 
-        // ClickThrough=1: an empty input region (the part of the window that gets the
-        // mouse), so every click goes to the window behind. Works on X11 and Wayland.
-        // Unlike on Windows, holding Ctrl doesn't make it clickable: with no input region
-        // we never learn that the mouse is over the skin.
-        // GTK sets the input region itself each time it lays the window out, so ours is set
-        // again after every layout (our handler is connected after GTK's, so it runs last).
-        // It checks the setting each time, since !ClickThrough can change it.
+        /*  ClickThrough=1: an empty input region (the part of the window that gets the
+            mouse), so every click goes to the window behind. Works on X11 and Wayland.
+            Unlike on Windows, holding Ctrl doesn't make it clickable: with no input region
+            we never learn that the mouse is over the skin.
+            GTK sets the input region itself each time it lays the window out, so ours is set
+            again after every layout (our handler is connected after GTK's, so it runs last).
+            It checks the setting each time, since !ClickThrough can change it. */
         let region_me = Rc::downgrade(&sw);
         window.connect_realize(move |w| {
             let Some(surface) = w.surface() else { return };
@@ -561,8 +686,8 @@ impl SkinWindow {
         sw
     }
 
-    // !ZPos, !Draggable, !ClickThrough, !KeepOnScreen, !SnapEdges: changes the setting
-    // straight away and saves it, as Rainmeter does
+    /*  !ZPos, !Draggable, !ClickThrough, !KeepOnScreen, !SnapEdges: changes the setting
+        straight away and saves it, as Rainmeter does */
     fn apply_window_bang(&self, bang: WindowBang) {
         let bit = |b: bool| if b { "1" } else { "0" }.to_string();
         // Sets a Cell<bool> setting from the bang's 1 / 0 / -1, returning the new value
@@ -602,9 +727,9 @@ impl SkinWindow {
         }
     }
 
-    // !Move X Y: puts the skin's top-left corner at (x, y), counted from the primary
-    // monitor, and saves WindowX/WindowY as plain numbers, as Rainmeter does. KeepOnScreen
-    // applies, but snapping doesn't (Rainmeter snaps only while dragging).
+    /*  !Move X Y: puts the skin's top-left corner at (x, y), counted from the primary
+        monitor, and saves WindowX/WindowY as plain numbers, as Rainmeter does. KeepOnScreen
+        applies, but snapping doesn't (Rainmeter snaps only while dragging). */
     fn move_bang(&self, pos: (i32, i32)) {
         let Some(manager) = self.manager.upgrade() else { return };
         let config = self.skin.borrow().config.clone();
@@ -618,16 +743,16 @@ impl SkinWindow {
         } else {
             crate::x11pos::move_to(&self.window, pos);
         }
-        // The move makes X11 report a new position: this stops that from saving it again
-        // in the old form
+        /*  The move makes X11 report a new position: this stops that from saving it again
+            in the old form */
         self.saved_position.set(Some(pos));
         if let Err(e) = config::save_position(&manager.cfg, &config, &opts.x, &opts.y) {
             self.log(Level::Error, &format!("Can't save the skin's position: {e}"));
         }
     }
 
-    // The window moved or changed size. During a drag this comes many times a second,
-    // so each call restarts a 500 ms wait, and the position is saved once it stops moving.
+    /*  The window moved or changed size. During a drag this comes many times a second,
+        so each call restarts a 500 ms wait, and the position is saved once it stops moving. */
     fn position_changed(&self) {
         if let Some(old) = self.save_timer.borrow_mut().take() {
             old.remove();
@@ -642,8 +767,8 @@ impl SkinWindow {
         *self.save_timer.borrow_mut() = Some(id);
     }
 
-    // If a position save is still waiting, does it now. Like Rainmeter's
-    // WriteDeferredOptions, this runs before the skin closes or refreshes.
+    /*  If a position save is still waiting, does it now. Like Rainmeter's
+        WriteDeferredOptions, this runs before the skin closes or refreshes. */
     fn flush_position(&self) {
         let pending = self.save_timer.borrow_mut().take();
         if let Some(timer) = pending {
@@ -652,8 +777,8 @@ impl SkinWindow {
         }
     }
 
-    // Where a window being moved to `pos` really goes: snapped to the edges of other skins
-    // and of the screen (SnapEdges=1, and `snapping`), then kept on screen (KeepOnScreen=1)
+    /*  Where a window being moved to `pos` really goes: snapped to the edges of other skins
+        and of the screen (SnapEdges=1, and `snapping`), then kept on screen (KeepOnScreen=1) */
     fn adjust_move(&self, mut pos: (i32, i32), snapping: bool) -> (i32, i32) {
         let size = self.size();
         let rects = crate::monitors::monitor_rects();
@@ -672,8 +797,8 @@ impl SkinWindow {
         pos
     }
 
-    // What [$Skin…] variables see: where the window is now (where it was put, if we
-    // can't tell, as on GNOME), its size and AlwaysOnTop
+    /*  What [$Skin…] variables see: where the window is now (where it was put, if we
+        can't tell, as on GNOME), its size and AlwaysOnTop */
     fn info(&self) -> SkinInfo {
         let (w, h) = self.size();
         let pos = crate::wlpos::position(&self.window).or_else(|| crate::x11pos::position(&self.window));
@@ -731,25 +856,32 @@ impl SkinWindow {
 
     // Stops the timers and closes the window
     fn close(&self) {
-        // OnCloseAction, while the skin is still whole (Rainmeter runs it before tearing
-        // the skin down). A config bang in it waits for GTK, so it can't close us twice
+        /*  OnCloseAction, while the skin is still whole (Rainmeter runs it before tearing
+            the skin down). A config bang in it waits for GTK, so it can't close us twice */
         let action = self.skin.borrow().on_close.clone();
         self.run_skin_action("Rainmeter", action, &Cell::new(false));
         self.flush_position();
         if let Some(timer) = self.timer.borrow_mut().take() {
             timer.remove();
         }
+        /*  An open menu goes first: GTK wants a widget's children taken off (unparented)
+            before the widget itself is freed */
+        if let Some(menu) = self.menu.take() {
+            menu.unparent();
+        }
         self.window.close();
     }
 
-    // (Re)starts the Update timer with the skin's current Update= value. The old timer,
-    // if any, is stopped first. The timer holds a Weak pointer, and stops itself once
-    // the skin is gone.
+    /*  (Re)starts the Update timer with the skin's current Update= value. The old timer,
+        if any, is stopped first. The timer holds a Weak pointer, and stops itself once
+        the skin is gone. */
     fn start_timer(&self) {
         if let Some(old) = self.timer.borrow_mut().take() {
             old.remove();
         }
-        let interval = self.skin.borrow().update_ms;
+        let Some(interval) = self.skin.borrow().update_ms else {
+            return; // !setUpdate -1: the old timer is gone and no new one starts
+        };
         let me = self.me.clone();
         let id = glib::timeout_add_local(Duration::from_millis(interval), move || {
             let Some(sw) = me.upgrade() else { return glib::ControlFlow::Break };
@@ -759,8 +891,8 @@ impl SkinWindow {
         *self.timer.borrow_mut() = Some(id);
     }
 
-    // One update of the whole skin: measures, then meters, then the window size, then a
-    // repaint. Used by the Update= timer and by !Update.
+    /*  One update of the whole skin: measures, then meters, then the window size, then a
+        repaint. Used by the Update= timer and by !Update. */
     fn update(&self) {
         let mut values = crate::measure::current_values(&self.skin.borrow().measures);
         self.update_measures(&mut values, &Pick::All);
@@ -867,9 +999,9 @@ impl SkinWindow {
         }
     }
 
-    // !Refresh: reads the skin file again and puts the new skin in place of the old one.
-    // If the file now has an error, the old skin keeps running.
-    // The timer restarts, since Update= may have changed.
+    /*  !Refresh: reads the skin file again and puts the new skin in place of the old one.
+        If the file now has an error, the old skin keeps running.
+        The timer restarts, since Update= may have changed. */ 
     fn refresh(&self) {
         self.flush_position();
         let (file, root, settings) = {
@@ -903,6 +1035,9 @@ impl SkinWindow {
         it left the window). As in Rainmeter's OnMouseMove, every leave runs first, then every
         over, one action at a time, checking again after each one. */
     fn move_actions(&self, pos: Option<(f64, f64)>) {
+        if self.menu.borrow().is_some() {
+            return; // the menu has the mouse now
+        }
         let start = self.refreshes.get();
         for step in [MouseEvent::Leave, MouseEvent::Over] {
             loop {
@@ -926,23 +1061,303 @@ impl SkinWindow {
         }
     }
 
-    // Runs the action of the first of `events` that anything at (x, y) has an action for
-    fn mouse_action(&self, x: f64, y: f64, events: &[MouseEvent]) {
+    /*  Runs the action of the first of `events` that anything at (x, y) has an action for
+        Returns whether one ran (none = a right-click opens the menu). */
+    fn mouse_action(&self, x: f64, y: f64, events: &[MouseEvent]) -> bool {
+        if self.menu.borrow().is_some() {
+            return false; // the menu has the mouse
+        }
         // Copy the action text out, so the read borrow ends before the bangs change the skin
         let text = {
             let s = self.skin.borrow();
             let expand = |name: &str, a: &str| self.as_skin(|| s.expand_action(name, a));
             let found = events.iter().find_map(|&e| s.action_at(x, y, e).map(|(name, a)| (e, expand(name, a))));
-            let Some((event, text)) = found else { return };
+            let Some((event, text)) = found else { return false };
             self.log(Level::Debug, &format!("{event:?} at ({x:.0}, {y:.0}): {text}"));
             text
         }; // `s` is dropped here: the skin is no longer borrowed
         self.run_action(&text);
+        true
     }
 
-    /*Runs an action: its bangs one after another, then any !Refresh, then (once GTK is free)
-    the congif bangs, as Rainmeter does. Used by mouse actions and the [Rainmeter]
-    actions (OnUpdateAction and others).*/
+    /*  Open a file or folder with the desktop's default program for it, as Windows'
+        ShellExectue does for Rainmeter. Used by the skin's name and, next, by Edit skin. */
+    fn open_default(&self, path: &Path) {
+        if let Err(e) = launch_default(path) {
+            self.log(Level::Error, &format!("Unable to open {}: {e}", path.display()));
+        }
+    }
+
+    /*  the right-click menu, opend at (x, y) like Rainmeter's skin menu. For now: the skin's
+        name and two commands; the rest comes in later steps. A GTK menu has two parts: a
+        gio::Menu (the list of labels, each naming an action such as "skin.refresh") and a 
+        PopoverMenu (the widget that show it). Each section gets a line between it and the next. */
+fn show_menu(&self, x: f64, y: f64) {
+    let name = self.skin.borrow().config.clone();
+    let custom = self.skin.borrow().context_items(); // title read now, as in Rainmeter
+
+    let title = gio::Menu::new();
+    title.append(Some(&menu_label(&name)), Some("skin.openfolder")); 
+    let commands = gio::Menu::new();
+    commands.append(Some(&tr("SkinMenu", "EditSkin")), Some("skin.edit"));
+    commands.append(Some(&tr("SkinMenu", "RefreshSkin")), Some("skin.refresh"));
+    let unload = gio::Menu::new();
+    unload.append(Some(&tr("SkinMenu", "UnloadSkin")), Some("skin.unload"));
+    let model = gio::Menu::new();
+    model.append_section(None, &title);
+    let variants = gio::Menu::new();
+    variants.append_submenu(Some(&tr("SkinMenu", "Variants")), &self.variants_menu());
+    let tree = self.skins_menu(&variants); // also adds the skin's root folder below Variants
+    model.append_section(None, &variants);
+    append_custom(&model, &custom);
+    let settings = gio::Menu::new();
+    settings.append_submenu(Some(&tr("SkinMenu", "Settings")), &self.settings_menu());
+    model.append_section(None, &settings);
+    model.append_section(None, &commands);
+    let program = gio::Menu::new();
+    program.append_submenu(Some("Snowmeter"), &program_menu(tree));
+    model.append_section(None, &program);
+    model.append_section(None, &unload);
+
+    self.popup(&model, x, y);
+    }
+
+    /*  Shows a menu at (x, y) on the skin: the right-click menu, and later !SkinMenu
+        and !SkinCustomMenu. Only one menu can be open at a time. */
+    fn popup(&self, model: &gio::Menu, x: f64, y: f64) {
+        if self.menu.borrow().is_some() {
+            return; // one at a time
+        }
+        // As in Rainmeter, the hover ends first (MouseLeaveAvtion run), since the menu takes the mouse
+        self.move_actions(None);
+        self.area.set_has_tooltip(false); // no tooltip while the menu is open, as in Rainmeter
+
+        let popover = gtk4::PopoverMenu::from_model_full(model, gtk4::PopoverMenuFlags::NESTED);
+        popover.set_parent(&self.area);
+        // Like a Windows menu: no arrow, top-left corner at the mouse
+        popover.set_has_arrow(false);
+        popover.set_halign(gtk4::Align::Start);
+        popover.set_position(gtk4::PositionType::Bottom);
+        popover.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+        /*  Once it close, take it off the skin and let mouse action work again. This waits
+            until GTK is idle: the clicked item's action may run after "closed", and GTK finds
+            the action through the popover's parent, so the popover must still be attached. */
+        let me = self.me.clone();
+        popover.connect_closed(move |_| {
+            let me = me.clone();
+            glib::idle_add_local_once(move || {
+                let Some(sw) = me.upgrade() else { return };
+                if let Some(menu) = sw.menu.take() {
+                    menu.unparent();
+                }
+                sw.area.set_has_tooltip(true);
+            });
+        });
+        self.menu.replace(Some(popover.clone())); // stored first, so the resize handler already finds it
+        popover.popup();
+    }
+
+    /*  !SkinCustomMenu: a menu of only the skin's ContextTitle items, as Rainmeter's 
+        ShowSkinCustomContextMenu: no heading, and no submenu however there are.
+        A skin without custom items show nothing. */
+    fn custom_menu(&self, x: f64, y: f64) {
+        let items = self.skin.borrow().context_items(); //titles read now, as in the full menu
+        let model = custom_sections(&items);
+        if model.n_items() > 0 {
+            self.popup(&model, x, y);
+        }
+    }
+
+    /*  The Settings submenu, as Rainmeter's Create SkinSettingsMenu. Its actions ("set.")
+        are made fresh each time the menu opens, from the values of this moment, so GTK
+        draws the right check marks and radio dot. A click runs the same bang a skin could. */
+    fn settings_menu(&self) -> gio::Menu {
+        let actions = gio::SimpleActionGroup::new();
+
+        /*  position: one action whose state is the zpos number. Each item carries its own
+            number (its target), and GTK puts the radio dot on the one that match the state. */
+        let zpos = gio::SimpleAction::new_stateful("zpos", Some(glib::VariantTy::INT32), &self.z.get().number().to_variant());
+        let me = self.me.clone();
+        zpos.connect_activate(move |_, target| {
+            let (Some(sw), Some(n)) = (me.upgrade(), target.and_then(|t| t.get::<i32>())) else { return };
+            sw.run_action(&format!("!ZPos {n}"));
+        });
+        actions.add_action(&zpos);
+
+        // on/off settings: a true/false state give a check mark; a click toggles (-1)
+        let toggles = [
+            ("clickthrough", "ClickThrough", self.click_through.get()),
+            ("draggable", "Draggable", self.draggable.get()),
+            ("keeponscreen", "KeepOnScreen", self.keep_on_screen.get()),
+            ("snapedges", "SnapEdges", self.snap_edges.get()),
+        ];
+        for (name, bang, on) in toggles {
+            let action = gio::SimpleAction::new_stateful(name, None, &on.to_variant());
+            let me = self.me.clone();
+            action.connect_activate(move |_, _| {
+                if let Some(sw) = me.upgrade() {
+                    sw.run_action(&format!("!{bang} -1"));
+                }
+            });
+            actions.add_action(&action);
+        }
+
+        // Not supported yet: an action that exist but is disabled, so GTK grays its items
+        let disabled = gio::SimpleAction::new("later", None);
+        disabled.set_enabled(false);
+        actions.add_action(&disabled);
+        self.area.insert_action_group("set", Some(&actions)); // replaces the last menu's group
+
+        let t = |key: &str| tr("SkinMenu", key);
+        let later = "set.later";
+
+        // Position ▸: the monitor (later), the five window layers, the X/Y options (later)
+        let monitor = gio::Menu::new();
+        monitor.append(Some(&t("DisplayMonitor")), Some(later));
+        let layers = gio::Menu::new();
+        for (key, n) in [("StayTopmost", 2), ("Topmost", 1), ("Normal", 0), ("Bottom", -1), ("OnDesktop", -2)] {
+            let item = gio::MenuItem::new(Some(&t(key)), None);
+            item.set_action_and_target_value(Some("set.zpos"), Some(&n.to_variant()));
+            layers.append_item(&item);
+        }
+        let axes = gio::Menu::new();
+        for key in ["FromRight", "FromBottom", "XasPercentage", "YasPercentage"] {
+            axes.append(Some(&t(key)), Some(later));
+        }
+        let position = gio::Menu::new();
+        position.append_section(None, &monitor);
+        position.append_section(None, &layers);
+        position.append_section(None, &axes);
+
+        // The three groups of Rainmeter's with a line between them
+        let size = gio::Menu::new();
+        size.append_submenu(Some(&t("Position")), &position);
+        size.append(Some(&t("Zoom")), Some(later));
+        let look = gio::Menu::new();
+        look.append(Some(&t("Transparncy")), Some(later));
+        look.append(Some(&t("OnHover")), Some(later));
+        let flags = gio::Menu::new();
+        for (key, action) in [
+            ("ClickThrough", "set.clickthrough"),
+            ("draggable", "set.draggable"),
+            ("KeepOnScreen", "set.keeponscreen"),
+            ("SavePosition", later),
+            ("SnapToEdges", "set.snapedges"),
+            ("Favorite", later),
+        ] {
+            flags.append(Some(&t(key)), Some(action));
+        }
+        let menu = gio::Menu::new();
+        menu.append_section(None, &size);
+        menu.append_section(None, &look);
+        menu.append_section(None, &flags);
+        menu
+    }
+
+    /*  The Variants submenu: every .ini in the skin's folder, with the running one checked.
+        As in Rainmeter (ToggleSkin), picking another file loads it in place of this one, and
+        picking the checked one unloads the skin. Made fresh each time, like settings_menu. */
+    fn variants_menu(&self) -> gio::Menu {
+        let (config, running, root) = {
+            let s = self.skin.borrow();
+            let file = s.file.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+            (s.config.clone(), file, s.skins_root.clone())
+        }; // borrow ends here
+
+        let menu = gio::Menu::new();
+        for file in config::config_files(&root, &config) {
+            let item = gio::MenuItem::new(Some(&menu_label(&file)), None);
+            item.set_action_and_target_value(Some("var.pick"), Some(&file.to_variant()));
+            menu.append_item(&item);
+        }
+
+        let actions = gio::SimpleActionGroup::new();
+        actions.add_action(&self.config_action("pick", config, running));
+        self.area.insert_action_group("var", Some(&actions));
+        menu
+    }
+
+    /*  One radio action for the .ini files of one config folder. Each item sends its file
+        name (its target) and GTK puts the dot on the item whose name equals the action's
+        state: the running file, or "" when none runs. As in Rainmeter (ToggleSkin), picking
+        the running file unloads the skin; picking another loads it in its place. */
+    fn config_action(&self, name: &str, config: String, running: String) -> gio::SimpleAction {
+        let action = gio::SimpleAction::new_stateful(name, Some(glib::VariantTy::STRING), &running.to_variant());
+        let me = self.me.clone();
+        action.connect_activate(move |_, target| {
+            let Some(sw) = me.upgrade() else { return };
+            let Some(file) = target.and_then(|t| t.get::<String>()) else { return };
+            if config.contains('"') || file.contains('"') {
+                // A bang can't quote a name with " in it (Windows forbids them in file names)
+                sw.log(Level::Error, &format!("Can't load {config}\\{file}: the name has a \" in it"));
+            } else if file == running {
+                sw.run_action(&format!("!DeactivateConfig \"{config}\""));
+            } else {
+                sw.run_action(&format!("!activateConfig \"{config}\" \"{file}\""));
+            }
+        });
+        action
+    }
+
+    // the running .ini file name, e.g. "Clock.ini"
+    fn file_name(&self) -> String {
+        let s = self.skin.borrow();
+        s.file.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()
+    }
+
+    /*  The Skins list of the program menu: the whole skins folder as tree, as Rainmeter's
+        CreateSkinsMenuRecursive. Each folder with .ini files gets its own radio action
+        (c0, c1, ...) in a fresh "tree" group, so every running skin has its dot. The skin's
+        root folder is also added to 'variants', below Variants ▸, as in Rainmeter. */
+    fn skins_menu(&self, variants: &gio::Menu) -> gio::Menu {
+        let root = self.skin.borrow().skins_root.clone();
+        let current = config_key(&self.skin.borrow().config); // "illustro\clock": lowercase, \ only
+        let top = current.split('\\').next().unwrap_or_default(); // its root folder: "illustro"
+        let menu = gio::Menu::new();
+        let actions = gio::SimpleActionGroup::new();
+        if let Some(manager) = self.manager.upgrade() {
+            for folder in config::skin_tree(&root) {
+                if folder.name.to_lowercase() == top {
+                    self.add_folder(variants, &folder, &folder.name, &manager, &actions);
+                }
+                self.add_folder(&menu, &folder, &folder.name, &manager, &actions);
+            }
+        }
+        self.area.insert_action_group("tree", Some(&actions));
+        menu
+    }
+
+    /*  adds one folder to 'parent' as a submenu: its .ini files first, then a line, then
+        its subfolders, as in Rainmeter. 'config' is the folder's path below the skins
+        folder ("illustro\Clock"), the config its files load as. it calls itself for each
+        subfolder (recursion), so any depth works. */
+    fn add_folder(&self, parent: &gio::Menu, folder: &config::SkinFolder, config: &str, manager: &Manager, actions: &gio::SimpleActionGroup) {
+        let submenu = gio::Menu::new();
+        if !folder.files.is_empty() {
+            let name = format!("c{}", actions.list_actions().len()); // a new name per folder
+            let running = manager.find(config).map(|sw| sw.file_name()).unwrap_or_default();
+            let files = gio::Menu::new();
+            for file in &folder.files {
+                let item = gio::MenuItem::new(Some(&menu_label(file)), None);
+                item.set_action_and_target_value(Some(&format!("tree.{name}")), Some(&file.to_variant()));
+                files.append_item(&item);
+            }
+            submenu.append_section(None, &files);
+            actions.add_action(&self.config_action(&name, config.to_string(), running));
+        }
+        if !folder.folders.is_empty() {
+            let folders = gio::Menu::new();
+            for sub in &folder.folders {
+                self.add_folder(&folders, sub, &format!("{config}\\{}", sub.name), manager, actions);
+            }
+            submenu.append_section(None, &folders);
+        }
+        parent.append_submenu(Some(&menu_label(&folder.name)), &submenu);
+    }
+
+    /*  Runs an action: its bangs one after another, then any !Refresh, then (once GTK is free)
+        the congif bangs, as Rainmeter does. Used by mouse actions and the [Rainmeter]
+        actions (OnUpdateAction and others). */
     fn run_action(&self, text: &str) {
         let (Some(me), Some(manager)) = (self.me.upgrade(), self.manager.upgrade()) else { return };
         let source = self.skin.borrow().source.clone(); // target errors name the skin whose action it is
@@ -977,12 +1392,12 @@ impl SkinWindow {
         for sw in to_refresh {
             sw.refresh();
         }
-        // Loading and closing skins waits until GTK is done with this click, since a skin
-        // may close its own window. They run in the order the action gave them.
+        /*  Loading and closing skins waits until GTK is done with this click, since a skin
+            may close its own window. They run in the order the action gave them. */
         if !config_bangs.is_empty() {
             let this = self.skin.borrow().config.clone();
-            // Keep the program alive until the bang have run: closiong the last windows
-            // would otherwise make GTK quit before a new skin can open
+            /*  Keep the program alive until the bang have run: closiong the last windows
+                would otherwise make GTK quit before a new skin can open */
             let hold = manager.app.hold();
             glib::idle_add_local_once(move || {
                 for bang in config_bangs {
@@ -1011,8 +1426,8 @@ impl SkinWindow {
         busy.set(false);
     }
 
-    // Runs one bang on this skin. Redraw and Update are done here; Refresh and the
-    // config bangs are handed back, for the caller to do when the action is finished.
+    /*  Runs one bang on this skin. Redraw and Update are done here; Refresh and the
+        config bangs are handed back, for the caller to do when the action is finished. */
     fn run(&self, command: &str) -> After {
         // Borrowed for this bang only: !Update needs to borrow the skin itself
         let source = self.skin.borrow().source.clone(); // bang errors name the skin the bang runs on
@@ -1034,6 +1449,18 @@ impl SkinWindow {
                     self.log(Level::Error, &format!("!UpdateMeasure: [{name}] not found"));
                 }
             }
+            After::Menu(menu) => {
+                // At the mouse when it's over this skin, else at the skin's top-left corner
+                let (x, y) = self.pointer.get().unwrap_or((0.0, 0.0));
+                match menu {
+                    action::Menu::Skin => self.show_menu(x, y),
+                    action::Menu::Custom => self.custom_menu(x, y),
+                }
+            }
+            After::SetUpdate(ms) => {
+                self.skin.borrow_mut().update_ms = ms;
+                self.start_timer(); // as in Rainmeter: the next update comes a full interval later
+            }
             After::Window(bang) => self.apply_window_bang(bang),
             After::Update => {
                 // As in Rainmeter, the next tick comes a full Update= later
@@ -1050,9 +1477,111 @@ impl SkinWindow {
         let bang = command.split_whitespace().next().unwrap_or(command);
         let folder = self.skin.borrow().skins_root.join(config.replace('\\', "/"));
         if folder.is_dir() {
-            self.log(Level::Error, &format!("{bang}: Skin \"{config}\" is not active"));
+            self.log(Level::Warning, &format!("{bang}: Skin \"{config}\" is not active"));
         } else {
             self.log(Level::Error, &format!("{bang}: Skin \"{config}\" does not exist"));
         }
     }
+}
+
+/*  the skin's custom items, as Rainmeter's AppendSkinCustomMenu: up to 3 go right in the menu
+    under a grayed "Custom skin action" heading (separators dropped there); more go into a 
+    submenu of that name, where a "---" title draws a line. GTK only draws lines between
+    section, so the submenu is cut into one section per run of items. */
+fn append_custom(model: &gio::Menu, items: &[ContextItem]) {
+    let heading = tr("SkinMenu", "CustomSkinActions");
+    if items.len() <= 3 {
+        let section = gio::Menu::new();
+        for item in items {
+            if let ContextItem::Action { n, title } = item {
+                section.append_item(&custom_item(*n, title));
+            }
+        }
+        if section.n_items() > 0 {
+            model.append_section(Some(&heading), &section); // a section's label is its grayed heading
+        }
+    } else {
+        let submenu = custom_sections(items);
+        let section = gio::Menu::new();
+        section.append_submenu(Some(&heading), &submenu);
+        model.append_section(None, &section);
+    }
+}
+
+/*  The custom items as a menu of their own, where a "---" title draws a line. GTK only
+    draws lines between section, so each run of items becomes one section. Used for the 
+    "Custom skin actions" submenu and for !SkinCustomMenu. */
+fn custom_sections(items: &[ContextItem]) -> gio::Menu {
+    let menu = gio::Menu::new();
+    let mut part = gio::Menu::new();
+    for item in items {
+        match item {
+            ContextItem::Action { n, title } => part.append_item(&custom_item(*n, title)),
+            ContextItem::Separator => {
+                if part.n_items() > 0 {
+                    menu.append_section(None, &part);
+                    part = gio::Menu::new(); // the next run starts a new section
+                }
+            }
+        }
+    }
+    if part.n_items() > 0 {
+        menu.append_section(None, &part);
+    }
+    menu
+}
+
+/*  The program menu ("Snowmeter ▸"), as Rainmeter's ShowMenu (ContextMenu.cpp). Items
+    that don't work yet name the disabled "app.later", so GTK greys them out. 'tree' is
+    the Skins list, made by SkinWindow::skins_menu. */
+fn program_menu(tree: gio::Menu) -> gio::Menu {
+    let t = |key: &str| tr("SnowmeterMenu", key);
+    let menu = gio::Menu::new();
+    let windows = gio::Menu::new();
+    windows.append(Some(&t("manage")), Some("app.later"));
+    windows.append(Some(&tr("DebugDialog", "Debug")), Some("app.later"));
+    windows.append(Some(&t("About")), Some("app.later"));
+    windows.append(Some(&t("Help")), Some("app.later"));
+    menu.append_section(None, &windows);
+
+    let skins = gio::Menu::new();
+    let top = gio::Menu::new();
+    top.append(Some(&t("OpenFolder")), Some("app.openskinsfolder"));
+    top.append(Some(&t("DisableDragging")), Some("app.later"));
+    skins.append_section(None, &top);
+    if tree.n_items() == 0 {
+        tree.append(Some(&t("NoSkins")), Some("app.later"));
+    }
+    skins.append_section(None, &tree);
+    let favorites = gio::Menu::new();
+    favorites.append(Some(&t("NoFavorites")), Some("app.later"));
+    let layouts = gio::Menu::new();
+    layouts.append(Some(&t("NoLayouts")), Some("app.later"));
+    let lists = gio::Menu::new();
+    lists.append_submenu(Some(&t("Skins")), &skins);
+    lists.append_submenu(Some(&t("Favorites")), &favorites);
+    lists.append_submenu(Some(&t("Layouts")), &layouts);
+    menu.append_section(None, &lists);
+
+    let commands = gio::Menu::new();
+    commands.append(Some(&t("EditSettings")), Some("app.editsettings"));
+    commands.append(Some(&t("RefreshAll")), Some("app.refreshall"));
+    menu.append_section(None, &commands);
+    let exit = gio::Menu::new();
+    exit.append(Some(&t("Exit")), Some("app.exit"));
+    menu.append_section(None, &exit);
+    menu
+}
+
+// One custom item: its title, and the "skin.context" action with its number as the target
+fn custom_item(n: usize, title: &str) -> gio::MenuItem {
+    let item = gio::MenuItem::new(Some(&menu_label(title)), None);
+    item.set_action_and_target_value(Some("skin.context"), Some(&(n as i32).to_variant()));
+    item
+}
+
+/*  GTK reads "_" in a menu label as a keyboard shortcut mark (_File = Alt+F) and hides it.
+    "__" show a real "_", so names like My_Skin and titlres stay as written. */
+fn menu_label(text: &str) -> String {
+    text.replace('_', "__")
 }

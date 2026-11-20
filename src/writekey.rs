@@ -89,8 +89,8 @@ pub fn write_key(text: &str, section: &str, key: &str, value: &str) -> String {
             out.replace_range(equals..line.end, &format!("{value}{ending}"));
         }
         None => {
-            // After the section's last non-blank line, so blank lines stay between sections
-            // Step back over blank llines and comments to the section's last key
+            /*  After the section's last non-blank line, so blank lines stay between sections
+                Step back over blank llines and comments to the section's last key */
             let mut at = end;
             while at > header + 1
                 && matches!(trim(content(&lines[at - 1])), l if l.is_empty() || l.starts_with(';')) {

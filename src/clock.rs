@@ -25,8 +25,8 @@ fn windows_timestamp(dt: &DateTime<FixedOffset>) -> f64 {
     (dt.timestamp() + i64::from(dt.offset().local_minus_utc()) + SECONDS_1601_TO_1970) as f64
 }
 
-// The number at the start of `s`, the way C's wcstod reads it: spaces skipped, then
-// an optional sign, digits, a '.', more digits and an exponent. 0 if there's no number.
+/*  The number at the start of `s`, the way C's wcstod reads it: spaces skipped, then
+    an optional sign, digits, a '.', more digits and an exponent. 0 if there's no number. */
 fn leading_number(s: &str) -> f64 {
     let s = s.trim_start();
     let b = s.as_bytes();
@@ -59,8 +59,8 @@ fn leading_number(s: &str) -> f64 {
     s[..end].parse().unwrap_or(0.0)
 }
 
-// Formats a time, returning None if the format string is invalid.
-// (chrono's .to_string() would panic on a bad format, and skins are untrusted input.)
+/*  Formats a time, returning None if the format string is invalid.
+    (chrono's .to_string() would panic on a bad format, and skins are untrusted input.) */
 fn render(format: &str, dt: &DateTime<FixedOffset>) -> Option<String> {
     let mut out = String::new();
     write!(out, "{}", dt.format(format)).ok()?;
@@ -101,8 +101,8 @@ impl TimeMeasure {
         m
     }
 
-    // A Time measure from its section: Format (empty: the default text, and the value is
-    // a timestamp) and TimeZone (hours from UTC; missing: this computer's local time)
+    /*  A Time measure from its section: Format (empty: the default text, and the value is
+        a timestamp) and TimeZone (hours from UTC; missing: this computer's local time) */
     pub fn from_options(section: &Section, vars: &HashMap<String, String>) -> TimeMeasure {
         let format = section.options.get("format").map(|v| ini::resolve(v, vars)).unwrap_or_default();
         let tz = section
