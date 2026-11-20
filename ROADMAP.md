@@ -43,7 +43,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 17. [ ] Quiet start on GNOME: skip the layer-shell check there, so gtk4-layer-shell doesn't print "your Wayland compositor does not support the Layer Shell protocol" before we fall back to X11 (task, added 2026-11-19)
 18. [ ] GNOME with Ubuntu's desktop icons (DING): when its window is found at startup, `AlwaysOnTop=-1`/`-2` act like `0` (normal), so the skin stays clickable instead of hiding under the icons window (added 2026-11-19)
 19. [ ] X11 and GNOME: our own drag, so `KeepOnScreen` / `SnapEdges` work during the drag and Ctrl/Shift can turn snapping off (added 2026-11-19)
-20. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
+20. [ ] Choose Snowmeter's license (GPL-2.0-or-later suggested, so Rainmeter's GPL-2.0 translations in `Languages/` can be shipped; they stay out of git until then) (task, added 2026-11-19)
 ---
 
 ## Skin files and variables
