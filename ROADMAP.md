@@ -15,7 +15,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 87 / 164 ≈ **53%**
+- Roadmap checklist: 88 / 164 ≈ **54%**
 - Translations: 0 / 39 = **0%** (the Language Support list; not part of the checklist)
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
@@ -24,26 +24,26 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
   - GNOME (Wayland): 4 / 7 ≈ **57%**
 
 ## Next up
-1. [ ] `[Rainmeter]` `Update` details (`Update=-1` = once, formula, `| Invisible N`, `Invalid Update` log)
-2. [ ] Remember position: formulas in `WindowX` / `WindowY`
-3. [ ] Skin setting `SavePosition` (0 = moves aren't saved)
-4. [ ] The skin's own defaults: `[Rainmeter]` `DefaultWindowX`, `DefaultAlwaysOnTop`, … (used when the settings file has nothing yet)
-5. [ ] Skin setting `AlphaValue` (the whole skin's transparency)
-6. [ ] Skin setting `FadeDuration`
-7. [ ] Skin setting `OnHover` (`HideOnMouseOver`): hide or fade when the mouse is over the skin
-8. [ ] Keep the anchor in place when `DynamicWindowSize` resizes the skin
-9. [ ] Skin setting `LoadOrder`
-10. [ ] Skin setting `AutoSelectScreen`
-11. [ ] Skin setting `StartHidden` (with the `!Show` / `!Hide` / `!Toggle` skin bangs)
-12. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
-13. [ ] `[Rainmeter]` `Blur` / `BlurRegion`
-14. [ ] Skins that fail to load: message box + deactivate, as Rainmeter (added 2026-11-16)
-15. [ ] Startup checks: message box for no skins / settings file not writable
-16. [ ] Only one Snowmeter running (a second start hands its skins or bangs to the running copy)
-17. [ ] Quiet start on GNOME: skip the layer-shell check there, so gtk4-layer-shell doesn't print "your Wayland compositor does not support the Layer Shell protocol" before we fall back to X11 (task, added 2026-11-19)
-18. [ ] GNOME with Ubuntu's desktop icons (DING): when its window is found at startup, `AlwaysOnTop=-1`/`-2` act like `0` (normal), so the skin stays clickable instead of hiding under the icons window (added 2026-11-19)
-19. [ ] X11 and GNOME: our own drag, so `KeepOnScreen` / `SnapEdges` work during the drag and Ctrl/Shift can turn snapping off (added 2026-11-19)
-20. [ ] Choose Snowmeter's license (GPL-2.0-or-later suggested, so Rainmeter's GPL-2.0 translations in `Languages/` can be shipped; they stay out of git until then) (task, added 2026-11-19)
+1. [ ] Remember position: formulas in `WindowX` / `WindowY`
+2. [ ] Skin setting `SavePosition` (0 = moves aren't saved)
+3. [ ] The skin's own defaults: `[Rainmeter]` `DefaultWindowX`, `DefaultAlwaysOnTop`, … (used when the settings file has nothing yet)
+4. [ ] Skin setting `AlphaValue` (the whole skin's transparency)
+5. [ ] Skin setting `FadeDuration`
+6. [ ] Skin setting `OnHover` (`HideOnMouseOver`): hide or fade when the mouse is over the skin
+7. [ ] Keep the anchor in place when `DynamicWindowSize` resizes the skin
+8. [ ] Skin setting `LoadOrder`
+9. [ ] Skin setting `AutoSelectScreen`
+10. [ ] Skin setting `StartHidden` (with the `!Show` / `!Hide` / `!Toggle` skin bangs); also use the `Update=… | Invisible N` rate while hidden (+15 min)
+11. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
+12. [ ] `[Rainmeter]` `Blur` / `BlurRegion`
+13. [ ] Skins that fail to load: message box + deactivate, as Rainmeter (added 2026-11-16)
+14. [ ] Startup checks: message box for no skins / settings file not writable
+15. [ ] Only one Snowmeter running (a second start hands its skins or bangs to the running copy)
+16. [ ] Quiet start on GNOME: skip the layer-shell check there, so gtk4-layer-shell doesn't print "your Wayland compositor does not support the Layer Shell protocol" before we fall back to X11 (task, added 2026-11-19)
+17. [ ] GNOME with Ubuntu's desktop icons (DING): when its window is found at startup, `AlwaysOnTop=-1`/`-2` act like `0` (normal), so the skin stays clickable instead of hiding under the icons window (added 2026-11-19)
+18. [ ] X11 and GNOME: our own drag, so `KeepOnScreen` / `SnapEdges` work during the drag and Ctrl/Shift can turn snapping off (added 2026-11-19)
+19. [ ] Choose Snowmeter's license (GPL-2.0-or-later suggested, so Rainmeter's GPL-2.0 translations in `Languages/` can be shipped; they stay out of git until then) (task, added 2026-11-19)
+20. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
 ---
 
 ## Skin files and variables
@@ -125,7 +125,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 
 ## [Rainmeter] section
 - [x] `Update`
-- [ ] `Update` details (Skin.cpp `ReadUpdateOption`): `Update=-1` means update once and never again (ours treats it as 1000 ms), a formula is allowed, the `| Invisible N` suffix, and `Invalid Update: …` in the log for anything 
+- [x] `Update` details (as Skin.cpp `ReadUpdateOption`): a number or a `(formula)`; below 0 = one update at load, then none; `| Invisible N` (any case, formula allowed, below 0 = 0) is read and stored; anything else after the number logs `Invalid Update: …` and keeps it. Every skin now gets its first update at load and at `!Refresh`, before the timer and `OnRefreshAction`, as in Rainmeter (before, the first one came a full `Update=` later). Difference: the `Invisible` rate isn't used yet; it will apply while the skin is hidden by `!Hide` (Next up `StartHidden`). Windows also counts a skin covered by other windows as invisible; GTK can't tell us that (X11 `VisibilityNotify` might, later)
         else (ours silently falls back to 1000)
 - [x] `DynamicWindowSize`
 - [x] `BackgroundMode=2` + `SolidColor`

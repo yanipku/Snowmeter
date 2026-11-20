@@ -98,7 +98,9 @@ pub enum ContextItem {
 pub struct Skin {
     pub measures: Vec<Box<dyn Measure>>,
     pub meters: Vec<Meter>,
-    pub update_ms: Option<u64>,             // None: no more updates (!setUpdate -1)
+    pub update_ms: Option<u64>,             // None: no more updates (Update below 0, or !setUpdate -1)
+    #[allow(dead_code)] //read once a skin can be hidden (!hide, next up 11)
+    pub invisible_ms: Option<u64>,          // Update=... | Invisible N: the rate while hidden (None: no change)
     pub background: Option<Background>,     // BackgroundMode 0 or 2 (None = 1: nothing painted)
     pub bevel: Option<meter::Bevel>,        //BevelType, BevelColor, BevelColor2, (BackgroudMode=2 only)
     pub width: i32,
@@ -230,6 +232,28 @@ pub fn window_size(meters: &[Meter], measures: &[Box<dyn Measure>], fixed: (i32,
         }
     };
     (side(right, fixed.0), side(bottom, fixed.1))
+}
+
+/*  [Rainmeter] Update=N, or Update=N | Invisible M, as RAinmeter reads it: N and M are
+    whole numbers of (formulas), and "Invisible" can be any case. Returns N (1000 when
+    missing or bad), M (at least 0; None when not given), and whether the text was valid:
+    anything else after N make it invalid, and the caller logs "Invalid Update". */
+fn read_update(text: &str) -> (i64, Option<u64>, bool) {
+    let number = |t: &str| formula::parse_number(t).ok().map(|n| n as i64);
+    let (first, rest) = match text.split_once('|') {
+        Some((first, rest)) => (first, Some(rest.trim_start())),
+        None => (text, None),
+    };
+    let update = number(first);
+    let first_ok = update.is_some() || first.trim().is_empty(); // empty: the default, no error
+    let invisible = rest.and_then(|rest| {
+        rest.get(..9) // the first 9 bytes, or None if the text is shorter
+            .filter(|word| word.eq_ignore_ascii_case("invisible"))
+            .and_then(|_| number(&rest[9..]))
+            .map(|m| m.max(0) as u64)
+    });
+    let ok = first_ok && (rest.is_none() || invisible.is_some());
+    (update.unwrap_or(1000), invisible.filter(|_| ok), ok)
 }
 
 /*  The variables as one section sees them: everything, plus #CURRENTSECTION#
@@ -493,7 +517,12 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         rm.and_then(|s| s.options.get(key))
             .map(|v| ini::resolve(v, &vars))
     };
-    let update_ms: u64 = get("update").and_then(|v| v.parse().ok()).unwrap_or(1000);
+    // Update=N | Invisible M (see read_update); N below 0 = update once at load, then never again
+    let update_text = get("update").unwrap_or_default();
+    let (update_ms, invisible_ms, ok) = read_update(&update_text);
+    if !ok {
+        section_log(Level::Error, "Rainmeter", &format!("Invalide Update: {update_text}"));
+    }
     let dynamic_window = get("dynamicwindowsize")
         .and_then(|v| formula::parse_number(&v).ok())
         .unwrap_or(0.0)
@@ -590,7 +619,8 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
     Ok(Skin {
         measures,
         meters,
-        update_ms: Some(update_ms.max(50)),
+        update_ms: (update_ms >= 0).then(|| (update_ms as u64).max(50)),
+        invisible_ms,
         background,
         bevel,
         width,
@@ -789,5 +819,18 @@ mod tests {
             ContextItem::Action { n: 3, title: "A very long title that goes o…".into() },
         ]);
         assert!(read(&[("contextaction", "[!Log 1]")]).is_empty(), "no first title: no items");
+    }
+
+    #[test]
+    fn update_option() {
+        assert_eq!(read_update("500"), (500, None, true));
+        assert_eq!(read_update("(250*4)"), (1000, None, true));
+        assert_eq!(read_update("-1"), (-1, None, true));
+        assert_eq!(read_update("1000 | Invisible 5000"), (1000, Some(5000), true));
+        assert_eq!(read_update("1000|invisible(2*0)"), (1000, Some(0), true));
+        assert_eq!(read_update("1000 | Invisible -5"), (1000, Some(0), true));
+        assert_eq!(read_update("fast"), (1000, None, false));
+        assert_eq!(read_update("1000 | Hidden 5000"), (1000, None, false));
+        assert_eq!(read_update("1000 |"), (1000, None, false));
     }
 }

@@ -143,6 +143,8 @@ impl Manager {
         if let Some(old) = old {
             old.close();
         }
+        // The first update, at load as in Rainmeter, before OnRefreshAction (with Update=-1 it's the only one)
+        window.update();
         /*  OnRefreshAction also runs on first load, once the skin is in the list (so bangs
             naming its own config find it) and any old skin of its config is gone */
         let action = window.skin.borrow().on_refresh.clone();
@@ -1024,7 +1026,7 @@ impl SkinWindow {
         self.refreshes.set(self.refreshes.get().wrapping_add(1));
         self.area.set_content_width(w);
         self.area.set_content_height(h);
-        self.area.queue_draw();
+        self.update(); // the first skin's first update, as ,at load (update() also asks for the redraw)
         self.start_timer();
         // OnRefreshAction: the skin is loaded again and its timer runs
         let action = self.skin.borrow().on_refresh.clone();
