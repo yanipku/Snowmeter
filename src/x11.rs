@@ -1,7 +1,9 @@
-/*  Window positions on X11. GTK4 has no way to read or set where a window is, and on
-    Wayland no program may, so this asks the X server directly. Every function quietly
-    does nothing on Wayland, or when libX11 can't be loaded.
-    GTK has deprecated its X11 backend (4.18), so all of it is kept in this one file. */
+/*  X11-only code: window positions, layers (AlwaysOnTop), and KWin's blur property.
+    GTK4 has no way to read or set where a window is, and on Wayland no program may, so
+    this asks the X server directly. Every function quietly does nothing on Wayland, or
+    when libX11 can't be loaded. GTK has deprecated its X11 backend (4.18), so all of it
+    is kept in this one file. */
+
 use crate::position::ZPos;
 use gdk4_x11::x11::xlib;
 use gdk4_x11::{X11Display, X11Surface};
@@ -135,6 +137,33 @@ fn level_state(z: ZPos) -> Option<&'static str> {
 // What change_states asks for (EWMH's _NET_WM_STATE_REMOVE and _NET_WM_STATE_ADD)
 const REMOVE: std::ffi::c_long = 0;
 const ADD: std::ffi::c_long = 1;
+
+/*  KWin's blur behind the window (Blur=1). The rectangles [x, y, w, h], in window pixels,
+    go into the window's _KDE_NET_WM_BLUR_BEHIND_REGION property: an empty list means the 
+    whole window, and None deletes the property, which turns blur off. window managers
+    without blur ignore it. Does nothing on wayland. */
+pub fn set_blur(window: &impl IsA<gtk4::Window>, rects: Option<&[[i32; 4]]>) {
+    let Some((display, xwindow)) = x11_handles(window) else { return };
+    let Some(atom) = intern_atom(display, "_KDE_NET_WM_BLUR_BEHIND_REGION") else { return };
+    XLIB.with(|lib| {
+        let Some(lib) = lib.as_ref() else { return };
+        /*  Safety: as in position(). Xlib reads 'data' during the call only, and wants
+            32-bit property data as c longs, one per number. */
+        unsafe {
+            match rects {
+                Some(rects) => {
+                    let data: Vec<std::ffi::c_long> = rects.iter().flatten().map(|&n| n.into()).collect();
+                    let mode = xlib::PropModeReplace;
+                    (lib.XChangeProperty)(display, xwindow, atom, xlib::XA_CARDINAL, 32, mode, data.as_ptr().cast(), data.len() as i32);
+                }
+                None => {
+                    (lib.XDeleteProperty)(display, xwindow, atom);
+                }
+            }
+            (lib.XFlush)(display);
+        }
+    });
+}
 
 /*  Runs `f` once, when the window is really on screen. The window manager sets a new
     window up as it appears, so a move made before that can be undone;

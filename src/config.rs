@@ -1,7 +1,7 @@
 use crate::ini::Ini;
 use crate::log::{log, Level};
 use crate::paths;
-use crate::position::{Options, ZPos};
+use crate::position::{eval_formula, Options, ZPos};
 use crate::sectionvar::leading_int;
 use crate::textfile;
 use std::env;
@@ -353,7 +353,14 @@ pub fn read_skin_settings(cfg: &Config, config: &str) -> SkinSettings {
     // Rainmeter's ReadBool: the whole number at the start, 0 = false
     let get_bool = |key: &str, default: bool| get(key).map_or(default, |v| leading_int(&v).unwrap_or(0) != 0);
 
-    let or_zero = |key: &str| get(key).unwrap_or_else(|| "0".into());
+    // A (formula) is worked out here, once as Rainmeter does when it reads them
+    let or_zero = |key: &str| {
+        let (text, error) = eval_formula(&get(key).unwrap_or_else(|| "0".into()));
+        if let Some(error) = error {
+            log(Level::Error, &config.replace('/', "\\"), &error);
+        }
+        text
+    };
     let position = Options {
         x: or_zero("windowx"),
         y: or_zero("windowy"),

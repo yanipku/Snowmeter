@@ -145,6 +145,7 @@ impl Manager {
         }
         // The first update, at load as in Rainmeter, before OnRefreshAction (with Update=-1 it's the only one)
         window.update();
+        window.apply_blur();    // Blur=1, right after the first update, as in Rainmeter
         /*  OnRefreshAction also runs on first load, once the skin is in the list (so bangs
             naming its own config find it) and any old skin of its config is gone */
         let action = window.skin.borrow().on_refresh.clone();
@@ -331,6 +332,8 @@ struct SkinWindow {
     saved_position: Cell<Option<(i32, i32)>>,
     // The right-click menu while it's open (None = closed); mouse actions wait until it closes
     menu: RefCell<Option<gtk4::PopoverMenu>>,
+    // The focus state the skin was last told about (OnFocusAction / OnUnfocusAction)
+    focused: Cell<bool>,
 }
 
 impl SkinWindow {
@@ -392,13 +395,14 @@ impl SkinWindow {
                 save_timer: RefCell::new(None),
                 saved_position: Cell::new(Some(position)),
                 menu: RefCell::new(None),
+                focused: Cell::new(false),
             }
         });
         sw.start_timer();
 
         // Save the position when the window has been moved (X11 only)
         let moved_me = Rc::downgrade(&sw);
-        crate::x11pos::on_moved(&window, move || {
+        crate::x11::on_moved(&window, move || {
             if let Some(sw) = moved_me.upgrade() {
                 sw.position_changed();
             }
@@ -464,13 +468,13 @@ impl SkinWindow {
                 it. dx, dy count from the press point inside the window; once the window has
                 moved that much, the mouse is over the same point again, so each update only
                 adds the newest movement. */
-            if let Some((wx, wy)) = crate::wlpos::position(&window) {
+            if let Some((wx, wy)) = crate::wayland::position(&window) {
                 sw.dragged.set(true);
                 // Holding Ctrl or Shift turns snapping off, as in Rainmeter
                 let held = gesture.current_event_state();
                 let snapping = !held.intersects(gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::SHIFT_MASK);
                 let target = sw.adjust_move((wx + dx as i32, wy + dy as i32), snapping);
-                crate::wlpos::move_to(&window, target);
+                crate::wayland::move_to(&window, target);
                 sw.position_changed(); // saved once the moving stops, as on X11
                 return;
             }
@@ -649,9 +653,9 @@ impl SkinWindow {
         });
 
         // Put the window in place: with the layer shell on Wayland, else by asking the X server
-        if !crate::wlpos::setup(&window, position, settings.z) {
-            crate::x11pos::move_when_shown(&window, position.0, position.1);
-            crate::x11pos::set_z_pos_when_managed(&window, settings.z);
+        if !crate::wayland::setup(&window, position, settings.z) {
+            crate::x11::move_when_shown(&window, position.0, position.1);
+            crate::x11::set_z_pos_when_managed(&window, settings.z);
         }
 
         /*  ClickThrough=1: an empty input region (the part of the window that gets the
@@ -674,15 +678,12 @@ impl SkinWindow {
             surface.connect_layout(move |s, _, _| clear(s));
         });
         /*OnFocusAction / OnUnfocusAction: GTK flips the window's "is-active" property
-          when it gain or loses keyboard focus */
+          when it gains or loses keyboard focus */
         let focus_me = Rc::downgrade(&sw);
-        window.connect_is_active_notify(move |w| {
-            let Some(sw) = focus_me.upgrade() else { return };
-            let action = {
-                let skin = sw.skin.borrow();
-                if w.is_active() { skin.on_focus.clone() } else { skin.on_unfocus.clone() }
-            };
-            sw.run_skin_action("Rainmeter", action, &Cell::new(false));
+        window.connect_is_active_notify(move |_| {
+            if let Some(sw) = focus_me.upgrade() {
+                sw.focus_changed();
+            }
         });
         window.present();
         sw
@@ -701,8 +702,8 @@ impl SkinWindow {
         let (key, value) = match bang {
             WindowBang::ZPos(z) => {
                 let old = self.z.replace(z);
-                if !crate::wlpos::set_z_pos(&self.window, z) {
-                    crate::x11pos::change_z_pos(&self.window, old, z);
+                if !crate::wayland::set_z_pos(&self.window, z) {
+                    crate::x11::change_z_pos(&self.window, old, z);
                 }
                 ("AlwaysOnTop", z.number().to_string())
             }
@@ -740,10 +741,10 @@ impl SkinWindow {
         let mut pos = crate::position::resolve(&opts, size, &crate::monitors::monitor_rects());
         pos = self.adjust_move(pos, false);
         // Only one of these does anything: layer-shell windows on Wayland, else X11
-        if crate::wlpos::position(&self.window).is_some() {
-            crate::wlpos::move_to(&self.window, pos);
+        if crate::wayland::position(&self.window).is_some() {
+            crate::wayland::move_to(&self.window, pos);
         } else {
-            crate::x11pos::move_to(&self.window, pos);
+            crate::x11::move_to(&self.window, pos);
         }
         /*  The move makes X11 report a new position: this stops that from saving it again
             in the old form */
@@ -803,7 +804,7 @@ impl SkinWindow {
         can't tell, as on GNOME), its size and AlwaysOnTop */
     fn info(&self) -> SkinInfo {
         let (w, h) = self.size();
-        let pos = crate::wlpos::position(&self.window).or_else(|| crate::x11pos::position(&self.window));
+        let pos = crate::wayland::position(&self.window).or_else(|| crate::x11::position(&self.window));
         let (x, y) = pos.or(self.saved_position.get()).unwrap_or((0, 0));
         SkinInfo { x, y, w, h, z: self.z.get() }
     }
@@ -828,20 +829,20 @@ impl SkinWindow {
 
     // Where the window is and how big, if we can tell (X11, or Wayland with layer shell)
     fn rect(&self) -> Option<gdk::Rectangle> {
-        let (x, y) = crate::wlpos::position(&self.window).or_else(|| crate::x11pos::position(&self.window))?;
+        let (x, y) = crate::wayland::position(&self.window).or_else(|| crate::x11::position(&self.window))?;
         let (w, h) = self.size();
         Some(gdk::Rectangle::new(x, y, w, h))
     }
 
     // Saves where the window is, unless that's already saved
     fn save_position_now(&self) {
-        let pos = crate::wlpos::position(&self.window).or_else(|| crate::x11pos::position(&self.window));
+        let pos = crate::wayland::position(&self.window).or_else(|| crate::x11::position(&self.window));
         let Some(mut pos) = pos else { return };
         // On X11 the window manager did the moving, so SnapEdges and KeepOnScreen can only
         // put the window right now that it has stopped (on Wayland the drag already did)
         let adjusted = self.adjust_move(pos, true);
         if adjusted != pos {
-            crate::x11pos::move_to(&self.window, adjusted);
+            crate::x11::move_to(&self.window, adjusted);
             pos = adjusted;
         }
         if self.saved_position.get() == Some(pos) {
@@ -871,6 +872,7 @@ impl SkinWindow {
         if let Some(menu) = self.menu.take() {
             menu.unparent();
         }
+        crate::wayland::set_blur(&self.window, None); // frees KWin's blur object
         self.window.close();
     }
 
@@ -1026,11 +1028,39 @@ impl SkinWindow {
         self.refreshes.set(self.refreshes.get().wrapping_add(1));
         self.area.set_content_width(w);
         self.area.set_content_height(h);
-        self.update(); // the first skin's first update, as ,at load (update() also asks for the redraw)
+        self.update(); // the first skin's first update, as at load (update() also asks for the redraw)
+        self.apply_blur(); 
         self.start_timer();
         // OnRefreshAction: the skin is loaded again and its timer runs
         let action = self.skin.borrow().on_refresh.clone();
         self.run_skin_action("Rainmeter", action, &self.in_refresh_action);
+    }
+
+    /*  Blur=1: tells the compositor which part of the window to blur, or to stop.
+        Kwin's property on x11, KDE's blur protocol on Wayland */
+    fn apply_blur(&self) {
+        let rects = self.skin.borrow().blur_rects();
+        crate::x11::set_blur(&self.window, rects.as_deref());
+        crate::wayland::set_blur(&self.window, rects.as_deref());
+    }
+
+    /*  OnFocusAction / OnUnfocusAction, only when the focus really changed. While the right-click 
+        menu is open, GTK moves the focus between the skin and the menu's own windows; Windows
+        doesn't, so those changes are skipped, and the state is checked again when the menu closes. */
+    fn focus_changed(&self) {
+        if self.menu.borrow().is_some() {
+            return;
+        }
+        let active = self.window.is_active();
+        // replace() stores the new state and give back the old one
+        if self.focused.replace(active) == active {
+            return;
+        }
+        let action = {
+            let skin = self.skin.borrow();
+            if active { skin.on_focus.clone() } else { skin.on_unfocus.clone() }
+        };
+        self.run_skin_action("Rainmeter", action, &Cell::new(false));
     }
 
     /*  MouseOverAction / MouseLeaveAction after the mouse moved to 'pos' in the window (None = 
@@ -1153,6 +1183,7 @@ fn show_menu(&self, x: f64, y: f64) {
                     menu.unparent();
                 }
                 sw.area.set_has_tooltip(true);
+                sw.focus_changed(); // the focus may have moved while the menu was open
             });
         });
         self.menu.replace(Some(popover.clone())); // stored first, so the resize handler already finds it
@@ -1463,6 +1494,7 @@ fn show_menu(&self, x: f64, y: f64) {
                 self.skin.borrow_mut().update_ms = ms;
                 self.start_timer(); // as in Rainmeter: the next update comes a full interval later
             }
+            After::Blur => self.apply_blur(),
             After::Window(bang) => self.apply_window_bang(bang),
             After::Update => {
                 // As in Rainmeter, the next tick comes a full Update= later

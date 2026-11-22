@@ -1,5 +1,5 @@
 use crate::group::Groups;
-use crate::ini;
+use crate::{blur, calc, clock, cpu, fonts, formula, ini, memory};
 use crate::log::{section_log, Level};
 use crate::measure::{number_option, Measure, Ranged, Switch};
 use crate::meter::{self, Layout, Meter};
@@ -7,7 +7,6 @@ use crate::mouse::{MouseActions, MouseEvent};
 use gtk4::cairo;
 use gtk4::gdk::prelude::GdkCairoContextExt;
 use gtk4::gdk_pixbuf::Pixbuf;
-use crate::{calc, clock, cpu, fonts, formula, memory};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -125,6 +124,8 @@ pub struct Skin {
     pub groups: Groups,                     // Group= of [Rainmeter]; the manager adds the settins file's
     pub tooltip_hidden: bool,               // [Rainmeter] ToolTipHidden: the default for meters that don't set their own
     pub context: HashMap<String, String>,   // ContextTitle/ContextAction (2, 3, ...) of [Rainmeter], raw, keys lowercase
+    pub blur: bool,                         // Blur=1, then !ShowBlur / !HideBlur: blur behinde the window is on
+    pub blur_region: Option<blur::Region>,  // BlurRegion=... shapes (None = the whole window)
 }
 
 impl Skin {
@@ -186,6 +187,18 @@ impl Skin {
         let Some(raw) = self.context.get(key) else { return String::new() };
         let text = ini::resolve(raw, &section_vars(&self.vars, "Rainmeter"));
         self.expand_action("Rainmeter", &text)
+    }
+
+    /*  What to send for blur (x11pos::set_blur): None = no blur (off, or a BlurRegion with
+        nothing in it), an empty lilst = the whole window, else the region's rectangles */
+    pub fn blur_rects(&self) -> Option<Vec<[i32; 4]>> {
+        if !self.blur {
+            return None;
+        }
+        match &self.blur_region {
+            None => Some(Vec::new()),
+            Some(region) => Some(region.rects()).filter(|rects| !rects.is_empty()),
+        }
     }
 }
 
@@ -254,6 +267,32 @@ fn read_update(text: &str) -> (i64, Option<u64>, bool) {
     });
     let ok = first_ok && (rest.is_none() || invisible.is_some());
     (update.unwrap_or(1000), invisible.filter(|_| ok), ok)
+}
+
+/*  [Rainmeter] Blur=1: blur behind the window. Returns whether it's on, and the region:
+    None = the whole window (no BlurRegion), else the shape of BlurRegion, BlurRegion2, ...
+    up to the first empty one, as Rainmeter reads them. A bad shape is logged as a warninhg. */
+fn read_blur(get: impl Fn(&str) -> Option<String>) -> (bool, Option<blur::Region>) {
+    let on = get("blur").and_then(|v| formula::parse_number(&v).ok()).is_some_and(|n| n != 0.0);
+    if !on {
+        return (false, None);
+    }
+    let mut region: Option<blur::Region> = None;
+    for n in 1.. {
+        //BlurRegion, then BlurRegion2, BlurRegion3, ...
+        let name = if n == 1 { "BlurRegion".to_lowercase() } else { format!("BlurRegion{n}") };
+        let Some(text) = get(&name.to_lowercase()).filter(|t| !t.is_empty()) else { break };
+        // the first shape makes the region, even if it's ignored
+        let shapes = region.get_or_insert_with(blur::Region::default);
+        let (shape, warning) = blur::Shape::read(&text);
+        if let Some(warning) = warning {
+            section_log(Level::Warning, "Rainmeter", &format!("{name}={text}: {warning}"));
+        } 
+        if let Some(shape) = shape {
+            shapes.add(&shape);
+        }
+    }
+    (true, region)
 }
 
 /*  The variables as one section sees them: everything, plus #CURRENTSECTION#
@@ -521,7 +560,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
     let update_text = get("update").unwrap_or_default();
     let (update_ms, invisible_ms, ok) = read_update(&update_text);
     if !ok {
-        section_log(Level::Error, "Rainmeter", &format!("Invalide Update: {update_text}"));
+        section_log(Level::Error, "Rainmeter", &format!("Invalide"));
     }
     let dynamic_window = get("dynamicwindowsize")
         .and_then(|v| formula::parse_number(&v).ok())
@@ -613,6 +652,8 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
     let context: HashMap<String, String> = rm
         .map(|s| s.options.iter().filter(|(k, _)| k.starts_with("context")).map(|(k, v)| (k.clone(), v.clone())).collect())
         .unwrap_or_default();
+    // Blur=1, BlurRegion=... (see read_blur)
+    let (blur, blur_region) = read_blur(&get);
 
     let (width, height) = window_size(&meters, &measures, fixed_size, background.as_ref(), background_margins);
     let source = log_source(&config, skin_file);
@@ -645,6 +686,8 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         groups,
         tooltip_hidden,
         context,
+        blur,
+        blur_region,
     })
 }
 
@@ -832,5 +875,19 @@ mod tests {
         assert_eq!(read_update("fast"), (1000, None, false));
         assert_eq!(read_update("1000 | Hidden 5000"), (1000, None, false));
         assert_eq!(read_update("1000 |"), (1000, None, false));
+    }
+
+    #[test]
+    fn blur_option() {
+        let blur = |options: &[(&str, &str)]| {
+            let (on, region) = read_blur(|key| options.iter().find(|(k, _)| *k == key).map(|(_, v)| v.to_string()));
+            (on, region.map(|r| r.rects()))
+        };
+        assert_eq!(blur(&[]), (false, None));
+        assert_eq!(blur(&[("blur", "1")]), (true, None)); // the whole window
+        assert_eq!(blur(&[("blur", "0"), ("blurregion", "1,0,0,10,10")]), (false, None));
+        let shapes = [("blur", "1"), ("blurregion", "1,0,0,10,10"), ("blurregion2", "1,20,0,10,10"), ("blurregion4", "1,40,0,10,10")];
+        assert_eq!(blur(&shapes), (true, Some(vec![[0, 0, 10, 10], [20, 0, 10, 10]]))); // stops at missing BlurRegion3
+        assert_eq!(blur(&[("blur", "1"), ("blurregion", "9,0,0,10,10")]), (true, Some(vec![]))); // a region with nothing in it
     }
 }

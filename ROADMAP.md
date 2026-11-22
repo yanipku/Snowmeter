@@ -15,35 +15,35 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 88 / 164 ≈ **54%**
+- Roadmap checklist: 90 / 173 ≈ **52%**
 - Translations: 0 / 39 = **0%** (the Language Support list; not part of the checklist)
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
-  - X11: 4 / 7 ≈ **57%**
-  - Wayland (layer-shell): 6 / 7 ≈ **86%**
+  - X11: 5 / 8 ≈ **63%**
+  - Wayland (layer-shell): 7 / 8 ≈ **88%**
   - GNOME (Wayland): 4 / 7 ≈ **57%**
 
 ## Next up
-1. [ ] Remember position: formulas in `WindowX` / `WindowY`
-2. [ ] Skin setting `SavePosition` (0 = moves aren't saved)
-3. [ ] The skin's own defaults: `[Rainmeter]` `DefaultWindowX`, `DefaultAlwaysOnTop`, … (used when the settings file has nothing yet)
-4. [ ] Skin setting `AlphaValue` (the whole skin's transparency)
-5. [ ] Skin setting `FadeDuration`
-6. [ ] Skin setting `OnHover` (`HideOnMouseOver`): hide or fade when the mouse is over the skin
-7. [ ] Keep the anchor in place when `DynamicWindowSize` resizes the skin
-8. [ ] Skin setting `LoadOrder`
-9. [ ] Skin setting `AutoSelectScreen`
-10. [ ] Skin setting `StartHidden` (with the `!Show` / `!Hide` / `!Toggle` skin bangs); also use the `Update=… | Invisible N` rate while hidden (+15 min)
-11. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
-12. [ ] `[Rainmeter]` `Blur` / `BlurRegion`
-13. [ ] Skins that fail to load: message box + deactivate, as Rainmeter (added 2026-11-16)
-14. [ ] Startup checks: message box for no skins / settings file not writable
-15. [ ] Only one Snowmeter running (a second start hands its skins or bangs to the running copy)
-16. [ ] Quiet start on GNOME: skip the layer-shell check there, so gtk4-layer-shell doesn't print "your Wayland compositor does not support the Layer Shell protocol" before we fall back to X11 (task, added 2026-11-19)
-17. [ ] GNOME with Ubuntu's desktop icons (DING): when its window is found at startup, `AlwaysOnTop=-1`/`-2` act like `0` (normal), so the skin stays clickable instead of hiding under the icons window (added 2026-11-19)
-18. [ ] X11 and GNOME: our own drag, so `KeepOnScreen` / `SnapEdges` work during the drag and Ctrl/Shift can turn snapping off (added 2026-11-19)
-19. [ ] Choose Snowmeter's license (GPL-2.0-or-later suggested, so Rainmeter's GPL-2.0 translations in `Languages/` can be shipped; they stay out of git until then) (task, added 2026-11-19)
-20. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
+1. [ ] Skin setting `SavePosition` (0 = moves aren't saved)
+2. [ ] The skin's own defaults: `[Rainmeter]` `DefaultWindowX`, `DefaultAlwaysOnTop`, … (used when the settings file has nothing yet)
+3. [ ] Skin setting `AlphaValue` (the whole skin's transparency)
+4. [ ] Skin setting `FadeDuration`
+5. [ ] Skin setting `OnHover` (`HideOnMouseOver`): hide or fade when the mouse is over the skin
+6. [ ] Keep the anchor in place when `DynamicWindowSize` resizes the skin
+7. [ ] Skin setting `LoadOrder`
+8. [ ] Skin setting `AutoSelectScreen`
+9. [ ] Skin setting `StartHidden` (with the `!Show` / `!Hide` / `!Toggle` skin bangs); also use the `Update=… | Invisible N` rate while hidden (+15 min)
+10. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
+11. [ ] Skins that fail to load: message box + deactivate, as Rainmeter (added 2026-11-16)
+12. [ ] Startup checks: message box for no skins / settings file not writable
+13. [ ] Only one Snowmeter running (a second start hands its skins or bangs to the running copy)
+14. [ ] Quiet start on GNOME: skip the layer-shell check there, so gtk4-layer-shell doesn't print "your Wayland compositor does not support the Layer Shell protocol" before we fall back to X11 (task, added 2026-11-19)
+15. [ ] GNOME with Ubuntu's desktop icons (DING): when its window is found at startup, `AlwaysOnTop=-1`/`-2` act like `0` (normal), so the skin stays clickable instead of hiding under the icons window (added 2026-11-19)
+16. [ ] X11 and GNOME: our own drag, so `KeepOnScreen` / `SnapEdges` work during the drag and Ctrl/Shift can turn snapping off (added 2026-11-19)
+17. [ ] Choose Snowmeter's license (GPL-2.0-or-later suggested, so Rainmeter's GPL-2.0 translations in `Languages/` can be shipped; they stay out of git until then) (task, added 2026-11-19)
+18. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
+19. [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction` (after `IfAbove`/`IfBelow`/`IfEqual`, sharing its helpers)
+20. [ ] `IfMatch` / `IfMatchAction` / `IfNotMatchAction`
 ---
 
 ## Skin files and variables
@@ -70,10 +70,19 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
   - [x] X11: the window manager moves it (`begin_move`)
   - [x] Wayland (layer-shell): we move it, by changing its margins
   - [x] GNOME: through XWayland, as X11 (tested on Ubuntu 25.04, Raspberry Pi 5)
-- [ ] Remember each skin's position and settings (Rainmeter.ini) 🟡 `Active=` (no skin on the command line = last time's skins); `WindowX`/`WindowY` with Rainmeter's `%`/`R`/`B`/`@N` forms, saved in the same form (500 ms after a move,  and on close/refresh), and `AnchorX`/`AnchorY`. Still to do (each its own Next up item): formulas in `WindowX`/`WindowY`, `SavePosition`, the skin's own `Default…` settings, `AlphaValue`, `FadeDuration`, `OnHover`, keeping the anchor in place when `DynamicWindowSize` resizes the skin, `LoadOrder`, `AutoSelectScreen`, `StartHidden`
-  - [x] X11: read and set through Xlib (`x11pos.rs`)
-  - [x] Wayland (layer-shell): monitor + margins (`wlpos.rs`)
+- [x] Remember each skin's position (Rainmeter.ini): `Active=` (no skin on the command line = last time's skins); `WindowX`/`WindowY` with Rainmeter's `%`/`R`/`B`/`@N` forms, saved in the same form (500 ms after a move,  and on close/refresh), and `AnchorX`/`AnchorY`, all four also as a `(formula)` before the modifiers, such as `(1920/4)R` (worked out once when read, as Rainmeter's `ParseFormulaWithModifiers`; a broken one logs `Formula:` and reads as 0). The other skin settings are the items below
+  - [x] X11: read and set through Xlib (`x11.rs`)
+  - [x] Wayland (layer-shell): monitor + margins (`wayland.rs`)
   - [x] GNOME: through XWayland, as X11. GNOME's window manager (Mutter) places a new window itself once it takes it over, after our first move, so the saved position is set again at that point (`when_managed`). Tested on Ubuntu 25.04 (Raspberry Pi 5). Long-term plan in Notes and ideas at the end
+- [ ] Skin setting `SavePosition` (0 = moves aren't saved)
+- [ ] The skin's own defaults: `[Rainmeter]` `DefaultWindowX`, `DefaultAlwaysOnTop`, … (used when the settings file has nothing yet)
+- [ ] Skin setting `AlphaValue` (the whole skin's transparency)
+- [ ] Skin setting `FadeDuration`
+- [ ] Skin setting `OnHover` (`HideOnMouseOver`): hide or fade when the mouse is over the skin
+- [ ] Keep the anchor in place when `DynamicWindowSize` resizes the skin
+- [ ] Skin setting `LoadOrder`
+- [ ] Skin setting `AutoSelectScreen`
+- [ ] Skin setting `StartHidden` (with the `!Show` / `!Hide` / `!Toggle` skin bangs); also use the `Update=… | Invisible N` rate while hidden
 - [x] Several skins at once (several on the command line; one with an error is skipped)
 - [x] Load, unload and refresh skins
 - [ ] Skins that fail to load (Skin.cpp `ReadSkin`): a message box with the `[Message]` text (`NoMetersInSkin`, `UnableToRefreshSkin`, `NewVersionRequired` for `SyntaxVersion` > 2 or a newer `AppVersion`), then the skin is 
@@ -143,7 +152,10 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
         `!SetVariableGroup`, `!DeactivateConfigGroup`; an empty group means every skin, as in Rainmeter)
 - [x] `LocalFont`
 - [x] `AccurateText` (0, the default, adds GDI+'s spacing like Rainmeter: size/6 each side, size/72 per character, size/8 below; the per-character spacing is only measured, not drawn, until meter `AntiAlias` exists)
-- [ ] `Blur` / `BlurRegion` (X11: only some compositors, e.g. KWin's blur hint · Wayland (layer-shell): KDE has a blur protocol, others vary · GNOME: no)
+- [x] `Blur` / `BlurRegion` (`BlurRegion2`, … up to the first empty one; shapes 1 = rectangle, 2 = rounded rectangle, 3 = ellipse, each number a formula; bangs `!ShowBlur`, `!HideBlur`, `!ToggleBlur`, `!AddBlur`, `!RemoveBlur`, with Rainmeter's quirks: with no `BlurRegion`, Add/Remove do nothing, and `!ShowBlur` on a `Blur=0` skin blurs the whole window. Differences: a rounded rectangle with no `r` is drawn as a rectangle, with a warning (Rainmeter blurs nothing); ignored shapes get a warning; round corners may differ by a pixel. On Windows 8 and later the same call makes the area see-through but no longer blurs it, so on KDE skins look as they did on Windows 7)
+  - [x] X11: KWin's `_KDE_NET_WM_BLUR_BEHIND_REGION` property (`x11.rs`). Other window managers ignore it. Tested on KDE Plasma 6.3 (Raspberry Pi 5)
+  - [x] Wayland (layer-shell): KDE's blur protocol, `org_kde_kwin_blur_manager` (`wayland.rs`). sway, Hyprland, labwc, … have none, so nothing happens. Tested on KDE Plasma 6.3 (Raspberry Pi 5)
+  - ❌ GNOME: no way for a program to ask for blur, on Wayland or through XWayland. For now the "Blur my Shell" extension can blur whole skin windows; our own extension later (Notes and ideas, GNOME)
 
 ## Interaction
 - [x] Mouse actions: `LeftMouseUp/Down/DoubleClickAction` (and the Right/Middle versions)
@@ -345,3 +357,4 @@ Plans and ideas that aren't checklist items. They don't count in any progress li
 
 ### GNOME (Wayland)
 - Plan for GNOME (no layer-shell), as Desktop Icons NG does it: one transparent, borderless, monitor-sized window per monitor (not fullscreen, which would cover the top bar), with an input region covering only the skins, so clicks elsewhere pass through, and every skin drawn inside it at its own x,y (we choose the skin positions). Paired with a small GNOME Shell extension (JavaScript) that puts each window on its monitor, keeps it on the desktop layer, and hides it from Alt+Tab, the dock and the overview: Mutter gives those powers only to extensions. Without the extension: limited mode, where skins show and can be clicked but GNOME may put the window on the wrong monitor or below the top bar, it stacks like a normal app, and it shows in Alt+Tab. Costs either way: all skins on a monitor stack together (no per-skin on top / on desktop), clicking a skin takes focus, no skin across two monitors. To keep this open, skins should draw into a target with an offset instead of assuming they own a whole window.
+- Blur on GNOME (idea, 2026-11-21): only GNOME Shell can see the pixels behind a window, so blur needs an extension. The same extension as above could read each skin's blur rectangles (for example the `_KDE_NET_WM_BLUR_BEHIND_REGION` property we already set on X11) and put GNOME's own blur effect (`Shell.BlurEffect`) there, so `BlurRegion` and the blur bangs work as on KDE. Costs: JavaScript, upkeep at each GNOME release (the extension API changes often), and the user has to enable it. Estimate ~4–6 h. Until then: "Blur my Shell" (its Applications setting) blurs whole skin windows. Rejected: blurring the wallpaper ourselves (wrong as soon as a window is behind the skin) and a near-solid noisy layer (doesn't blur, and looks less like Windows, where `Blur` does nothing visible since Windows 8).

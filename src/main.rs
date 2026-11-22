@@ -1,4 +1,5 @@
 mod action;
+mod blur;
 mod calc;
 mod clock;
 mod config;
@@ -22,9 +23,9 @@ mod sectionvar;
 mod skin;
 mod textfile;
 mod tooltip;
-mod wlpos;
+mod wayland;
 mod writekey;
-mod x11pos;
+mod x11;
 
 use crate::log::{log, Level};
 use gtk4::prelude::*;

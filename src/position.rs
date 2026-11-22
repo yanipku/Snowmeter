@@ -21,6 +21,29 @@ impl Default for Options {
     }
 }
 
+/*  Rainmeter's ParseFormulaWithModifiers, for WindowX/WindowY/AnchorX/AnchorY: a (formula)
+    at the start is worked out once, and its value takes its place before the modifiers,
+    so "(100+50)R@2" become "150R@2". Text that doesn't start with '(' and end in ')'
+    before the modifiers is kept as is. So is a broken formula, and the error is returned
+    for the log. */
+pub fn eval_formula(text: &str) -> (String, Option<String>) {
+    let Some(end) = text.rfind(')') else { return (text.to_string(), None) };
+    let (formula, modifiers) = text.split_at(end + 1);
+    if !formula.starts_with('(') {
+        return (text.to_string(), None);
+    }
+    match crate::formula::parse_number(formula) {
+        Ok(value) => (number_text(value) + modifiers, None),
+        Err(e) => (text.to_string(), Some(format!("Formula: {e}: {formula}"))),
+    }
+}
+
+// A number as Rainmeter writes it here: C's "%lf" (6 decimals), less the trailling zeros
+fn number_text(value: f64) -> String {
+    let text = format!("{value:.6}");
+    text.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
 // AlwaysOnTop=: where the skin sits among other windows (Rainmeter's ZPOSITION)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ZPos {
@@ -428,5 +451,22 @@ mod tests {
         let a = x("33%R");
         let saved = a.to_option(1234, 0, 1920);
         assert_eq!(x(&saved).resolve(0, 1920), 1234);
+    }
+
+    #[test]
+    fn formulas() {
+        let eval = |text: &str| eval_formula(text).0;
+        assert_eq!(eval("(100+50)"), "150");
+        assert_eq!(eval("(100+50)R@2"), "150R@2"); // the modifiers stay after the value
+        assert_eq!(eval("(50/4)%"), "12.5%");
+        assert_eq!(eval("(-20*2)"), "-40");
+        assert_eq!(eval("200R"), "200R"); // no formula: unchanged
+        assert_eq!(eval("20)R"), "20)R"); // a ')' without '(' at the start: unchanged
+        // A broken formula is kept as written, with an error for the log
+        let (text, error) = eval_formula("(10+)R");
+        assert_eq!(text, "(10+)R");
+        assert!(error.is_some_and(|e| e.starts_with("Formula: ")));
+        // what comes out reads as Axis::parse expects
+        assert_eq!(x(&eval("(1920/2)R")).resolve(0, 1920), 960);
     }
 }

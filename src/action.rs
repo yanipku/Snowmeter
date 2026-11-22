@@ -1,12 +1,11 @@
 /*  Action strings, such as LeftMouseUpAction=[!ShowMeter A][!Redraw], and the bangs in them.
     Follows Rainmeter's CommandHandler::ExecuteCommand (Library/CommandHandler.cpp).*/
 
-use crate::formula;
 use crate::position::ZPos;
 use crate::skin::Skin;
 use crate::measure::Measure;
 use crate::log::{log, skin_log, Level};
-use crate::{paths, textfile, writekey};
+use crate::{blur, formula, paths, textfile, writekey};
 use std::path::Path;
 
 // What the window has to do after a bang, since bangs can't reach the window themselves
@@ -18,6 +17,7 @@ pub enum After {
     UpdateMeter(Pick),      // !UpdateMeter Name: update the meters it picks now; no repaint
     UpdateMeasure(Pick),    // !UpdateMeasure Name: the same for a measure
     Refresh,                // !Refresh: read the skin file again from scratch
+    Blur,                   // !ShowBlur, !HideBlur, !ToggleBlur, !AddBlur, !RemoveBlur: send the blur again
     Menu(Menu),             // !SkinMenu / !SkinCustomMenu: only the window can show a menu
     Config(ConfigBang),     // a bang that loads or unloads skins: only the manager can do it
     Window(WindowBang),     // a bang that changes a window setting: only the window can do it
@@ -91,6 +91,8 @@ fn arg_count(bang: &str) -> Option<usize> {
     match bang {
         "redraw" | "update" | "refresh" => Some(0),
         "skinmenu" | "skincustommenu" => Some(0),
+        "showblur" | "hideblur" | "toggleblur" => Some(0),
+        "addblur" | "removeblur" => Some(1),
         "showmeter" | "hidemeter" | "togglemeter" => Some(1),
         "showmetergroup" | "hidemetergroup" | "togglemetergroup" => Some(1),
         "enablemeasure" | "disablemeasure" | "togglemeasure" => Some(1),
@@ -352,6 +354,32 @@ pub fn execute(skin: &mut Skin, cmd: &str) -> After {
         "refresh" => After::Refresh,
         "skinmenu" => After::Menu(Menu::Skin),
         "skincustommenu" => After::Menu(Menu::Custom),
+        "showblur" | "hideblur" | "toggleblur" => {
+            // Rainmeter's Showblur / HideBlur; a toggle flips what the skin has now
+            skin.blur = match lower.as_str() {
+                "showblur" => true,
+                "hideblur" => false,
+                _ => !skin.blur,
+            };
+            After::Blur
+        }
+        "addblur" | "removeblur" => {
+            let Some(arg) = args.first() else {
+                skin_log(Level::Error, &format!("!{name}: Incorrect nomber of arguments"));
+                return After::Nothing;
+            };
+            let (shape, warning) = blur::Shape::read(arg);
+            if let Some(warning) = warning {
+                skin_log(Level::Warning, &format!("!{name} {arg}: {warning}"));
+            }
+            /*  Without a BlurRegion (the whole window, or Blur=0) there is no region to
+                change, as in Rainmeter */
+            if let (Some(shape), Some(region)) = (shape, skin.blur_region.as_mut()) {
+                if lower == "addblur" { region.add(&shape) } else { region.remove(&shape) }
+            }
+            // sent again only while blur is on, as Rainmeter's "if (IsBlur()) ShowBlur()"
+            if skin.blur { After::Blur } else { After::Nothing }
+        }
         "activateconfig" | "toggleconfig" => {
             let Some(config) = args.first().cloned() else {
                 skin_log(Level::Error, &format!("!{name}: Invalid parameters"));

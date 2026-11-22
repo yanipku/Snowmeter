@@ -7,13 +7,18 @@ edition = "2024"
 chrono = "0.4.45"
 encoding_rs = "0.8.42"
 gtk4 = "0.11.5"
-# X11 only: window positions (Wayland doesn't let programs see or set them).
-# "xlib" loads libX11 at run time, so the program still starts without it.
+#   X11 only: window positions (Wayland doesn't let programs see or set them).
+#   "xlib" loads libX11 at run time, so the program still starts without it.
 gdk4-x11 = { version = "0.11.5", features = ["xlib"] }
-# Wayland only: window positions and layers, through the layer-shell protocol.
-# Needs the system library libgtk4-layer-shell (package libgtk4-layer-shell-dev to build).
+#   Wayland only: window positions and layers, through the layer-shell protocol.
+#   Needs the system library libgtk4-layer-shell (package libgtk4-layer-shell-dev to build).
 gtk4-layer-shell = "0.8.1"
-# Signal numbers (SIGINT, SIGTERM, SIGHUP) for quitting cleanly
+#   wayland only: blur behind the window on KDE Plasma, through KDE's blur protocol.
+#   "wayland_crate" gives the wayland objects behind GTK's windows.
+gdk4-wayland = { version = "0.11.5", features = ["wayland_crate"] }
+wayland-client = "0.31.15"
+wayland-protocols-plasma = { version = "0.3.12", features = ["client"]}
+#   Signal numbers (SIGINT, SIGTERM, SIGHUP) for quitting cleanly
 libc = "0.2"
-# Unix signals through Glib's main loop (moved out of glib in 0.22)
+#   Unix signals through Glib's main loop (moved out of glib in 0.22)
 glib-unix = "0.22.8"
