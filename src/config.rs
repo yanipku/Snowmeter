@@ -335,12 +335,13 @@ pub struct SkinSettings {
     /*  WindowX, WindowY, AnchorX and AnchorY as written, such as "10%R@2" (position.rs reads
         them). A missing one is "0", Rainmeter's default. */
     pub position: Options,
-    pub z: ZPos,             // AlwaysOnTop=, default 0 (Normal)
-    pub draggable: bool,     // Draggable=, default 1
-    pub click_through: bool, // ClickThrough=, default 0
-    pub keep_on_screen: bool, // KeepOnScreen=, default 1
-    pub snap_edges: bool,    // SnapEdges=, default 1
-    pub group: String,       // Group=: the config's groups (the skin file can add more)
+    pub z: ZPos,                // AlwaysOnTop=, default 0 (Normal)
+    pub draggable: bool,        // Draggable=, default 1
+    pub click_through: bool,    // ClickThrough=, default 0
+    pub keep_on_screen: bool,   // KeepOnScreen=, default 1
+    pub snap_edges: bool,       // SnapEdges=, default 1
+    pub save_position: bool,    // SavePosition=, default 1 (0 = moves aren't saved)
+    pub group: String,          // Group=: the config's groups (the skin file can add more)
 }
 
 /*  Reads a config's window settings, reading the file once. Missing ones get
@@ -374,6 +375,7 @@ pub fn read_skin_settings(cfg: &Config, config: &str) -> SkinSettings {
         click_through: get_bool("clickthrough", false),
         keep_on_screen: get_bool("keeponscreen", true),
         snap_edges: get_bool("snapedges", true),
+        save_position: get_bool("saveposition", true),
         group: get("group").unwrap_or_default(),
     }
 }

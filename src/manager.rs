@@ -311,6 +311,8 @@ struct SkinWindow {
     // KeepOnScreen=, SnapEdges=, ClickThrough= and AlwaysOnTop=
     keep_on_screen: Cell<bool>,
     snap_edges: Cell<bool>,
+    // SavePosition=: off, moves still happen but WindowX/WindowY aren't written
+    save_position: Cell<bool>,
     click_through: Cell<bool>,
     z: Cell<ZPos>,
     /*  Set when the last left press ran a LeftMouseDownAction: as in Rainmeter, that press
@@ -384,6 +386,7 @@ impl SkinWindow {
                 draggable: Cell::new(settings.draggable),
                 keep_on_screen: Cell::new(settings.keep_on_screen),
                 snap_edges: Cell::new(settings.snap_edges),
+                save_position: Cell::new(settings.save_position),
                 click_through: Cell::new(settings.click_through),
                 z: Cell::new(settings.z),
                 press_ran_action: Cell::new(false),
@@ -711,14 +714,8 @@ impl SkinWindow {
             WindowBang::KeepOnScreen(n) => ("KeepOnScreen", bit(set(&self.keep_on_screen, n))),
             WindowBang::SnapEdges(n) => ("SnapEdges", bit(set(&self.snap_edges, n))),
             WindowBang::ClickThrough(n) => {
-                let on = set(&self.click_through, n);
-                if let Some(surface) = self.window.surface() {
-                    if on {
-                        clear_input_region(&surface);
-                    } else {
-                        surface.set_input_region(None); // None: the whole window again
-                    }
-                }
+                let on = action::flag(n, self.click_through.get());
+                self.set_click_through(on);
                 ("ClickThrough", bit(on))
             }
             WindowBang::Move(x, y) => return self.move_bang((x, y)),
@@ -728,6 +725,57 @@ impl SkinWindow {
         if let Err(e) = config::save_setting(&manager.cfg, &config, key, &value) {
             self.log(Level::Error, &format!("Can't save {key}: {e}"));
         }
+    }
+
+    /*  Sets ClickThrough= on the window: an empty input region (every click goes to the
+        window behinde), or None for the whole window again. Used by !ClickThrough and
+        !Refresh; the realize handler in open() keeps it after GTK's layouts. */
+    fn set_click_through(&self, on: bool) {
+        self.click_through.set(on);
+        let Some(surface) = self.window.surface() else { return };
+        if on {
+            clear_input_region(&surface);
+        } else {
+            surface.set_input_region(None); // None: the whole window again
+        }
+    }
+
+    /*  Put the window settings read from the settings file into effect, as Rainmeter's
+        Refresh does after reading them again. (At load, opoen() starts with them.) */
+    fn apply_settings(&self, s: &SkinSettings) {
+        self.draggable.set(s.draggable);
+        self.keep_on_screen.set(s.keep_on_screen);
+        self.snap_edges.set(s.snap_edges);
+        self.save_position.set(s.save_position);
+        self.set_click_through(s.click_through);
+
+        // The layer' only when it changed (as Rainmeter: oldZPos != m_WindowZPosition)
+        let old = self.z.replace(s.z);
+        if old != s.z && !crate::wayland::set_z_pos(&self.window, s.z) {
+            crate::x11::change_z_pos(&self.window, old, s.z);
+        }
+
+        /*  The saved position, work out with the skin's new size (R/B and anchors depend
+            on it), then kept on screen. With SavePosition=0 this is how the skin goes back
+            to its saved place, as in Rainmeter. */
+        let size = self.size();
+        let rects = crate::monitors::monitor_rects();
+        let mut pos = crate::position::resolve(&s.position, size, &rects);
+        if s.keep_on_screen {
+            pos = crate::position::keep_on_screen(pos, size, rects.get(1..).unwrap_or(&[]));
+        }
+        self.move_window(pos);
+        // so the move X11 reports back isn't saved again (see move_bang)
+        self.saved_position.set(Some(pos));
+    }
+
+    //Move the window: layer-shell window on wayland, else X11 (only one does anything)
+    fn move_window(&self, pos: (i32, i32)) {
+        if crate::wayland::position(&self.window).is_some() {
+            crate::wayland::move_to(&self.window, pos);
+        } else {
+            crate::x11::move_to(&self.window, pos);
+        } 
     }
 
     /*  !Move X Y: puts the skin's top-left corner at (x, y), counted from the primary
@@ -740,16 +788,13 @@ impl SkinWindow {
         let opts = crate::position::moved(&config::read_position(&manager.cfg, &config), pos, size);
         let mut pos = crate::position::resolve(&opts, size, &crate::monitors::monitor_rects());
         pos = self.adjust_move(pos, false);
-        // Only one of these does anything: layer-shell windows on Wayland, else X11
-        if crate::wayland::position(&self.window).is_some() {
-            crate::wayland::move_to(&self.window, pos);
-        } else {
-            crate::x11::move_to(&self.window, pos);
-        }
+        self.move_window(pos);
         /*  The move makes X11 report a new position: this stops that from saving it again
             in the old form */
         self.saved_position.set(Some(pos));
-        if let Err(e) = config::save_position(&manager.cfg, &config, &opts.x, &opts.y) {
+        if self.save_position.get()
+            && let Err(e) = config::save_position(&manager.cfg, &config, &opts.x, &opts.y) 
+        {
             self.log(Level::Error, &format!("Can't save the skin's position: {e}"));
         }
     }
@@ -849,12 +894,30 @@ impl SkinWindow {
             return; // only resized (DynamicWindowSize), or moved back to where it was
         }
         self.saved_position.set(Some(pos));
+        if !self.save_position.get() {
+            return; // SavePosition=0: the skin moved, but the file keeps the old place
+        }
         let Some(manager) = self.manager.upgrade() else { return };
         let (config, size) = {
             let s = self.skin.borrow();
             (s.config.clone(), (s.width, s.height))
         };
         manager.save_position(&config, pos, size);
+    }
+
+    /*  The menu's "Save position": writes SavePosition=0/1. Turning it on also saves where
+        the skin is now, as Rainmeter's SetSavePosition does. */
+    fn set_save_position(&self, on: bool) {
+        self.save_position.set(on);
+        let Some(manager) = self.manager.upgrade() else { return };
+        let config = self.skin.borrow().config.clone();
+        if let Err(e) = config::save_setting(&manager.cfg, &config, "SavePosition", if on { "1" } else { "0" }) {
+            self.log(Level::Error, &format!("Can't save SavePosition: {e}"));
+        }
+        // saved_position kept followinf the window, even while nothing was written
+        if on && let Some(pos) = self.saved_position.get() {
+            manager.save_position(&config, pos, self.size());
+        }
     }
 
     // Stops the timers and closes the window
@@ -1019,15 +1082,19 @@ impl SkinWindow {
                 return;
             }
         };
-        // the setting file's Group= joins the skin's own, as in Rainmeter
-        if let Some(manager) = self.manager.upgrade() {
-            fresh.groups.add(&config::read_skin_settings(&manager.cfg, &fresh.config).group);
+        // Rainmeter.ini is read again too: its Group= joins the skin's own, as in Rainmeter
+        let window_settings = self.manager.upgrade().map(|m| config::read_skin_settings(&m.cfg, &fresh.config));
+        if let Some(ws) = &window_settings {
+            fresh.groups.add(&ws.group);
         }
         let (w, h) = (fresh.width, fresh.height);
         *self.skin.borrow_mut() = fresh; // the old skin is dropped here
         self.refreshes.set(self.refreshes.get().wrapping_add(1));
         self.area.set_content_width(w);
         self.area.set_content_height(h);
+        if let Some(ws) = &window_settings {
+            self.apply_settings(ws);
+        }
         self.update(); // the first skin's first update, as at load (update() also asks for the redraw)
         self.apply_blur(); 
         self.start_timer();
@@ -1235,6 +1302,16 @@ fn show_menu(&self, x: f64, y: f64) {
             actions.add_action(&action);
         }
 
+        //SavePosition has no bang, so its item calls the methode straight away
+        let save = gio::SimpleAction::new_stateful("saveposition", None, &self.save_position.get().to_variant());
+        let me = self.me.clone();
+        save.connect_activate(move |_, _| {
+            if let Some(sw) = me.upgrade() {
+                sw.set_save_position(!sw.save_position.get());
+            }
+        });
+        actions.add_action(&save);
+
         // Not supported yet: an action that exist but is disabled, so GTK grays its items
         let disabled = gio::SimpleAction::new("later", None);
         disabled.set_enabled(false);
@@ -1274,7 +1351,7 @@ fn show_menu(&self, x: f64, y: f64) {
             ("ClickThrough", "set.clickthrough"),
             ("draggable", "set.draggable"),
             ("KeepOnScreen", "set.keeponscreen"),
-            ("SavePosition", later),
+            ("SavePosition", "set.saveposition"),
             ("SnapToEdges", "set.snapedges"),
             ("Favorite", later),
         ] {

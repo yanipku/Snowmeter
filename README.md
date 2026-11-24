@@ -12,7 +12,7 @@ The full checklist, compared with Rainmeter for Windows, is in [ROADMAP.md](ROAD
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 90 / 173 ≈ **52%**
+- Roadmap checklist: 91 / 173 ≈ **53%**
 - Translations: 0 / 39 = **0%**
 
 - Compatibility with each kind of desktop (the desktop-dependent items in the roadmap):
@@ -30,7 +30,7 @@ The full checklist, compared with Rainmeter for Windows, is in [ROADMAP.md](ROAD
 - [x] Several skins at once (give several on the command line); with no skin given, last time's skins are loaded
 - [x] Skin positions are remembered on X11, and on Wayland desktops with layer-shell (KDE, sway, labwc, …)
 
-- [x] Per-skin window settings: `AlwaysOnTop`, `Draggable`, `ClickThrough`, `KeepOnScreen`, `SnapEdges`, `AnchorX`/`AnchorY`
+- [x] Per-skin window settings: `AlwaysOnTop`, `Draggable`, `ClickThrough`, `KeepOnScreen`, `SnapEdges`, `SavePosition`, `AnchorX`/`AnchorY`
 - [x] Blur behind the skin (`Blur`, `BlurRegion`) on KDE Plasma, on X11 and Wayland
 
 ## Not yet
@@ -66,7 +66,7 @@ Skins are meant to work as they do on Windows. Where Snowmeter does something di
 - `Update=… | Invisible N` is read but not used yet, and a skin covered by other windows doesn't count as invisible (GTK can't tell).
 - `AccurateText=0`: the extra space per character is measured but not drawn, until meter `AntiAlias` exists.
 - `BackgroundMode=0` with an image that can't be loaded logs an error and shows no background (Rainmeter makes a 0×0 window).
-- `Blur` only works on KDE Plasma (X11 and Wayland), where KWin does the blur. Other desktops (GNOME, sway, Hyprland, labwc, …) give programs no way to ask for blur, so nothing happens there. On GNOME, the "Blur my Shell" extension can blur whole skin windows: in its Applications settings, add Snowmeter's windows to the list (`BlurRegion` is then ignored). On Windows, `Blur` only blurs on Vista and 7: since Windows 8 the area turns see-through but isn't blurred, so on KDE a skin can look blurrier than it does on Windows 10/11.
+- `Blur` only works on KDE Plasma (X11 and Wayland), where KWin does the blur. Other desktops (GNOME, sway, Hyprland, labwc, …) give programs no way to ask for blur, so nothing happens there. On GNOME, the "Blur my Shell" extension can blur whole skin windows: install it with Extension Manager (on Ubuntu 25.04 the apt package `gnome-shell-extension-blur-my-shell` doesn't work), then in its Applications settings add Snowmeter's windows to the list. It blurs the whole skin window while it isn't focused, and stops when you click the skin; it ignores `Blur` and `BlurRegion` (even `Blur=0`). On Windows, `Blur` only blurs on Vista and 7: since Windows 8 the area turns see-through but isn't blurred, so on KDE a skin can look blurrier than it does on Windows 10/11.
 - `BlurRegion=2,…` (rounded rectangle) with no corner radius is drawn as a plain rectangle, with a warning in the log; Rainmeter blurs nothing there. Shapes Rainmeter ignores (zero width or height, unknown type) are ignored here too, but with a warning.
 - Rounded corners and ellipses in `BlurRegion` can differ from Windows by a pixel.
 - A number in a blur shape that is a broken formula counts as 0, like Rainmeter, but without Rainmeter's `Formula:` error in the log.
