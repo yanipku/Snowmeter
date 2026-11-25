@@ -15,22 +15,22 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 91 / 173 ≈ **53%**
+- Roadmap checklist: 92 / 174 ≈ **53%**
 - Translations: 0 / 39 = **0%** (the Language Support list; not part of the checklist)
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
-  - X11: 5 / 8 ≈ **63%**
-  - Wayland (layer-shell): 7 / 8 ≈ **88%**
-  - GNOME (Wayland): 4 / 7 ≈ **57%**
+  - X11: 5 / 9 ≈ **56%**
+  - Wayland (layer-shell): 7 / 9 ≈ **78%**
+  - GNOME (Wayland): 4 / 8 = **50%**
 
 ## Next up
-1. [ ] The skin's own defaults: `[Rainmeter]` `DefaultWindowX`, `DefaultAlwaysOnTop`, … (used when the settings file has nothing yet)
-2. [ ] Skin setting `AlphaValue` (the whole skin's transparency)
-3. [ ] Skin setting `FadeDuration`
-4. [ ] Skin setting `OnHover` (`HideOnMouseOver`): hide or fade when the mouse is over the skin
-5. [ ] Keep the anchor in place when `DynamicWindowSize` resizes the skin
-6. [ ] Skin setting `LoadOrder`
-7. [ ] Skin setting `AutoSelectScreen`
+1. [ ] Skin setting `AlphaValue` (the whole skin's transparency)
+2. [ ] Skin setting `FadeDuration`
+3. [ ] Skin setting `OnHover` (`HideOnMouseOver`): hide or fade when the mouse is over the skin
+4. [ ] Keep the anchor in place when `DynamicWindowSize` resizes the skin
+5. [ ] Skin setting `LoadOrder`
+6. [ ] Skin setting `AutoSelectScreen`
+7. [ ] First load: `[$SkinX]`/`[$SkinY]` see the skin's default position (`skin::load` reads the `Default…` keys and gets the position from the manager before the meters, as Rainmeter) (task, ~30–45 min, added 2026-11-24)
 8. [ ] Skin setting `StartHidden` (with the `!Show` / `!Hide` / `!Toggle` skin bangs); also use the `Update=… | Invisible N` rate while hidden (+15 min)
 9. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
 10. [ ] Skins that fail to load: message box + deactivate, as Rainmeter (added 2026-11-16)
@@ -43,7 +43,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 17. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
 18. [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction` (after `IfAbove`/`IfBelow`/`IfEqual`, sharing its helpers)
 19. [ ] `IfMatch` / `IfMatchAction` / `IfNotMatchAction`
-20. [ ] Measure `UpdateDivider`
+20. [ ] `!SetWallpaper` (one backend per desktop: GNOME settings, KDE plasmashell D-Bus, X11; added 2026-11-24)
 ---
 
 ## Skin files and variables
@@ -75,7 +75,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
   - [x] Wayland (layer-shell): monitor + margins (`wayland.rs`)
   - [x] GNOME: through XWayland, as X11. GNOME's window manager (Mutter) places a new window itself once it takes it over, after our first move, so the saved position is set again at that point (`when_managed`). Tested on Ubuntu 25.04 (Raspberry Pi 5). Long-term plan in Notes and ideas at the end
 - [x] Skin setting `SavePosition` (0 = moves aren't saved: a drag or `!Move` still moves the skin, but `WindowX`/`WindowY` keep the old place; not written in when missing, as Rainmeter). Right-click ▸ Settings ▸ Save position switches it, writes `SavePosition=`, and turning it on saves where the skin is now. `!Refresh` sends an unsaved skin back to its saved place, as Rainmeter
-- [ ] The skin's own defaults: `[Rainmeter]` `DefaultWindowX`, `DefaultAlwaysOnTop`, … (used when the settings file has nothing yet)
+- [x] The skin's own defaults: `[Rainmeter]` `DefaultWindowX`/`Y`, `DefaultAnchorX`/`Y`, `DefaultAlwaysOnTop`, `DefaultOnHover` (or the old `DefaultHideOnMouseOver`), `DefaultDraggable`, `DefaultSnapEdges`, `DefaultClickThrough`, `DefaultKeepOnScreen`, `DefaultSavePosition`, `DefaultStartHidden`, `DefaultAutoSelectScreen`, `DefaultAlphaValue` (0–255), `DefaultFadeDuration` (0 or more). As in Rainmeter, they are used only when a config is loaded for the first time (its section in the settings file is missing or empty): the ones that are set are written into the section, below `Active=`, as plain keys (positions as written, formulas and all; numbers with Rainmeter's `ReadInt`; bools as 1/0), then the skin reads its settings as usual. Refresh, a variant switch or a restart never apply them again. All 15 are written, even those not used yet (`OnHover`, `AlphaValue`, …). Difference: on that very first load, options read once at load that use `[$SkinX]`/`[$SkinY]` see 0,0 instead of the default position (we work the position out before reading the skin); from the first update on, and on every later load, it's right (fix: Next up 7)
 - [ ] Skin setting `AlphaValue` (the whole skin's transparency)
 - [ ] Skin setting `FadeDuration`
 - [ ] Skin setting `OnHover` (`HideOnMouseOver`): hide or fade when the mouse is over the skin
@@ -189,6 +189,10 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] Bangs: `!ActivateConfig`, `!DeactivateConfig`, `!ToggleConfig`
 - [x] Bangs aimed at other skins: an extra config argument, or `*` for all (Rainmeter's DoBang rule)
 - [ ] Running external programs from actions (`["program"]`)
+- [ ] Bangs: `!SetWallpaper File [Style]` (Rainmeter: the file path is relative to the skin's folder; Style = `Center`, `Tile`, `Stretch`, `Fit`, `Fill` (any case), empty = keep the current style; Windows converts the image to `Wallpaper.bmp` in the settings folder first; a file that can't be read logs `!SetWallpaper: Unable to read file: …`). Linux has no single wallpaper setting, so it needs one backend per desktop
+  - [ ] X11: the desktop's own setting where it has one (Xfce `xfconf`, …), else draw it on the root window
+  - [ ] Wayland (layer-shell): KDE through plasmashell's D-Bus scripting; sway / Hyprland / labwc have no standard way (a wallpaper program like `swaybg`)
+  - [ ] GNOME: the `org.gnome.desktop.background` settings (`picture-uri`, `picture-options`), through GIO
 - [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction`
 - [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
 - [ ] `IfMatch` actions
@@ -221,7 +225,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [ ] `Loop`
 - [ ] `String`
 - [ ] `Script` (Lua)
-- [ ] Ex-plugins that make sense on Linux: `SysInfo`, `Process`, `Power`, `WifiStatus`, `FolderInfo`, `Ping`, `WebParser`, `NowPlaying`, `Audio`/`AudioLevel`, `RunCommand`, `InputText`, `FileView`, `UsageMonitor`
+- [ ] Ex-plugins that make sense on Linux (plugin API plan in Notes and ideas): `SysInfo`, `Process`, `Power`, `WifiStatus`, `FolderInfo`, `Ping`, `WebParser`, `NowPlaying` (through MPRIS on D-Bus: one interface that most Linux media players offer, so no per-player code; GIO's D-Bus client is enough), `Audio`/`AudioLevel`, `RunCommand`, `InputText`, `FileView`, `UsageMonitor`
 - [ ] Skip or find Linux replacements for: `PerfMon`, `Registry`, `iTunes`, `SpeedFan`, `CoreTemp`, `WindowMessage`, `RecycleManager`, `ResMon`
 
 ## General meter options
@@ -358,3 +362,13 @@ Plans and ideas that aren't checklist items. They don't count in any progress li
 ### GNOME (Wayland)
 - Plan for GNOME (no layer-shell), as Desktop Icons NG does it: one transparent, borderless, monitor-sized window per monitor (not fullscreen, which would cover the top bar), with an input region covering only the skins, so clicks elsewhere pass through, and every skin drawn inside it at its own x,y (we choose the skin positions). Paired with a small GNOME Shell extension (JavaScript) that puts each window on its monitor, keeps it on the desktop layer, and hides it from Alt+Tab, the dock and the overview: Mutter gives those powers only to extensions. Without the extension: limited mode, where skins show and can be clicked but GNOME may put the window on the wrong monitor or below the top bar, it stacks like a normal app, and it shows in Alt+Tab. Costs either way: all skins on a monitor stack together (no per-skin on top / on desktop), clicking a skin takes focus, no skin across two monitors. To keep this open, skins should draw into a target with an offset instead of assuming they own a whole window.
 - Blur on GNOME (idea, 2026-11-21): only GNOME Shell can see the pixels behind a window, so blur needs an extension. The same extension as above could read each skin's blur rectangles (for example the `_KDE_NET_WM_BLUR_BEHIND_REGION` property we already set on X11) and put GNOME's own blur effect (`Shell.BlurEffect`) there, so `BlurRegion` and the blur bangs work as on KDE. Costs: JavaScript, upkeep at each GNOME release (the extension API changes often), and the user has to enable it. Estimate ~4–6 h. Until then: "Blur my Shell" (its Applications setting) blurs whole skin windows, but only while they aren't focused, and ignores `Blur`/`BlurRegion` (tested 2026-11-23). Rejected: blurring the wallpaper ourselves (wrong as soon as a window is behind the skin) and a near-solid noisy layer (doesn't blur, and looks less like Windows, where `Blur` does nothing visible since Windows 8).
+
+### Plugins (plan, 2026-11-24)
+Goal: make porting a Rainmeter plugin to Snowmeter as easy as possible for its author. Rainmeter plugins are Windows `.dll` files, so none load as they are; on Linux a plugin is a `.so`, loaded with `dlopen` (`libloading` crate).
+- Same API, same names: ship a Linux `RainmeterAPI.h` with Rainmeter's functions and signatures (the plugin's `Initialize`, `Reload`, `Update`, `GetString`, `ExecuteBang`, `Finalize`; Snowmeter's `RmReadString`, `RmReadFormula`, `RmReplaceVariables`, `RmPathToAbsolute`, `RmExecute`, `RmGet`, `RmLog`, …). Snowmeter exports the `Rm…` functions itself (or ships a small `libsnowmeter.so` to link against). Windows-only parts are made harmless in the header, so plugin code needs no `#ifdef`s for them: `PLUGIN_EXPORT` = `extern "C" __attribute__((visibility("default")))`, `__stdcall` = nothing, `LPCWSTR`/`BOOL`/`LPVOID`/`HWND` = plain typedefs.
+- Text: keep `LPCWSTR` = `const wchar_t*`. On Linux `wchar_t` is 32 bits (UTF-32, Windows: 16), but `L"…"`, `wcscmp`, `std::wstring` then compile unchanged; Snowmeter converts UTF-8 ↔ UTF-32 at the boundary. (`char16_t` would keep UTF-16 but make authors rewrite every string.)
+- Skins don't change: `Plugin=MyPlugin` loads `MyPlugin.so` from Snowmeter's `Plugins` folder or the skin's `@Resources` (as `.rmskin` packages do). Open: what `RmGet(RMG_SKINWINDOWHANDLE)` returns on Linux.
+- Help for authors (most porting work is the plugin's own Windows code, not our API): a porting guide (registry → config file, WMI / performance counters → `/proc` and `/sys`, Windows audio → PipeWire/PulseAudio, media → MPRIS, …); a template project (`CMakeLists.txt` building x86_64 and ARM64); a test runner that loads a `.so` and calls `Initialize`/`Update` outside Snowmeter; a `snowmeter-plugin` Rust crate for new plugins.
+- C# plugins (Rainmeter's `Rainmeter.cs` API): possible later through .NET on Linux (NativeAOT can export C functions), more work.
+- Scripts in other languages (Python, …): out-of-process plugins, a separate program talking to Snowmeter over stdin/stdout or D-Bus, using the same function names as messages. Crash-safe, can be sandboxed, any language; costs a message per call (fine at normal `Update=` rates). Embedding Python (`pyo3`) was rejected: a big dependency, and scripts would run inside Snowmeter with full rights. The Lua `Script` measure stays embedded, as in Rainmeter.
+- Security: a native plugin runs inside Snowmeter with full rights, and its crash takes every skin down; say so clearly to users who install plugins.

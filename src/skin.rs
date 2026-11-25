@@ -4,6 +4,7 @@ use crate::log::{section_log, Level};
 use crate::measure::{number_option, Measure, Ranged, Switch};
 use crate::meter::{self, Layout, Meter};
 use crate::mouse::{MouseActions, MouseEvent};
+use crate::sectionvar::leading_int;
 use gtk4::cairo;
 use gtk4::gdk::prelude::GdkCairoContextExt;
 use gtk4::gdk_pixbuf::Pixbuf;
@@ -97,35 +98,36 @@ pub enum ContextItem {
 pub struct Skin {
     pub measures: Vec<Box<dyn Measure>>,
     pub meters: Vec<Meter>,
-    pub update_ms: Option<u64>,             // None: no more updates (Update below 0, or !setUpdate -1)
-    #[allow(dead_code)] //read once a skin can be hidden (!hide, next up 11)
-    pub invisible_ms: Option<u64>,          // Update=... | Invisible N: the rate while hidden (None: no change)
-    pub background: Option<Background>,     // BackgroundMode 0 or 2 (None = 1: nothing painted)
-    pub bevel: Option<meter::Bevel>,        //BevelType, BevelColor, BevelColor2, (BackgroudMode=2 only)
+    pub update_ms: Option<u64>,                 // None: no more updates (Update below 0, or !setUpdate -1)
+    #[allow(dead_code)]                         //read once a skin can be hidden (!hide, next up 11)
+    pub invisible_ms: Option<u64>,              // Update=... | Invisible N: the rate while hidden (None: no change)
+    pub background: Option<Background>,         // BackgroundMode 0 or 2 (None = 1: nothing painted)
+    pub bevel: Option<meter::Bevel>,            //BevelType, BevelColor, BevelColor2, (BackgroudMode=2 only)
     pub width: i32,
     pub height: i32,
-    pub dynamic_window: bool,               // DynamicWindowSize=1
-    pub fixed_size: (i32, i32),             // SkinWidth/SkinHeight (0 = follow the meter)
-    pub drag_margins: [i32; 4],             // DragMargins=Left,Top,Right,Bottom (all 0 = drag anywhere)
-    pub background_margins: [i32; 4],       // BackgroundMArgins=Left,Top,Right,Bottom: space around the meters
-    pub mouse: MouseActions,                // mouse actions of [Rainmeter], for clicks no meter takes
-    pub mouse_over: bool,                   // the mouse is over the skin's window
-    pub on_refresh: Option<String>,         // OnRefreshAction, OnUpdateAction and OnCloseAction of [Rainmeter] (none = not set)
+    pub dynamic_window: bool,                   // DynamicWindowSize=1
+    pub fixed_size: (i32, i32),                 // SkinWidth/SkinHeight (0 = follow the meter)
+    pub drag_margins: [i32; 4],                 // DragMargins=Left,Top,Right,Bottom (all 0 = drag anywhere)
+    pub background_margins: [i32; 4],           // BackgroundMArgins=Left,Top,Right,Bottom: space around the meters
+    pub mouse: MouseActions,                    // mouse actions of [Rainmeter], for clicks no meter takes
+    pub mouse_over: bool,                       // the mouse is over the skin's window
+    pub on_refresh: Option<String>,             // OnRefreshAction, OnUpdateAction and OnCloseAction of [Rainmeter] (none = not set)
     pub on_update: Option<String>,
     pub on_close: Option<String>,
     pub on_focus: Option<String>,
     pub on_unfocus: Option<String>,
-    pub vars: HashMap<String, String>,      // the variable table, kept so !SetVariable can change it
-    pub file: PathBuf,                      // the skin's .ini, the skins folder and the settings folder:
-    pub skins_root: PathBuf,                // what load() needs to read the skin again for !Refresh
+    pub vars: HashMap<String, String>,          // the variable table, kept so !SetVariable can change it
+    pub file: PathBuf,                          // the skin's .ini, the skins folder and the settings folder:
+    pub skins_root: PathBuf,                    // what load() needs to read the skin again for !Refresh
     pub settings_dir: PathBuf,
-    pub config: String,                     // the config name, like illustro\Clock (#CURRENTCONFIG#)
-    pub source: Rc<str>,                    // the log source: config and file, like illustro\Clock\Clock.ini
-    pub groups: Groups,                     // Group= of [Rainmeter]; the manager adds the settins file's
-    pub tooltip_hidden: bool,               // [Rainmeter] ToolTipHidden: the default for meters that don't set their own
-    pub context: HashMap<String, String>,   // ContextTitle/ContextAction (2, 3, ...) of [Rainmeter], raw, keys lowercase
-    pub blur: bool,                         // Blur=1, then !ShowBlur / !HideBlur: blur behinde the window is on
-    pub blur_region: Option<blur::Region>,  // BlurRegion=... shapes (None = the whole window)
+    pub config: String,                         // the config name, like illustro\Clock (#CURRENTCONFIG#)
+    pub source: Rc<str>,                        // the log source: config and file, like illustro\Clock\Clock.ini
+    pub groups: Groups,                         // Group= of [Rainmeter]; the manager adds the settins file's
+    pub tooltip_hidden: bool,                   // [Rainmeter] ToolTipHidden: the default for meters that don't set their own
+    pub context: HashMap<String, String>,       // ContextTitle/ContextAction (2, 3, ...) of [Rainmeter], raw, keys lowercase
+    pub blur: bool,                             // Blur=1, then !ShowBlur / !HideBlur: blur behinde the window is on
+    pub blur_region: Option<blur::Region>,      // BlurRegion=... shapes (None = the whole window)
+    pub defaults: Vec<(&'static str, String)>,  // DefaultWindowX=... and the others, as settings_file keys (see read_defaults)
 }
 
 impl Skin {
@@ -293,6 +295,52 @@ fn read_blur(get: impl Fn(&str) -> Option<String>) -> (bool, Option<blur::Region
         }
     }
     (true, region)
+}
+
+/*  The skin's own first-run settings: [Rainmeter] DefaultWindowX=200 and the others, as the
+    settings-file keys they become, like ("WindowX", "200"). Only the ones that are set (and
+    not empty) count, in Rainmeter's order. The manager writes them into the settings file
+    the first time a config is loaded, as Rainmeter's ReadOption does. */
+fn read_defaults(get: impl Fn(&str) -> Option<String>) -> Vec<(&'static str, String)> {
+    //DefaultKek, when it's set and not empty
+    let set = |key: &str| get(&format!("default{}", key.to_lowercase())).filter(|v| !v.trim().is_empty());
+    let mut out = Vec::new();
+    //Positions are kept as written, (formulas) and all: read_skin_settings work them out
+    for key in ["WindowX", "WindowY", "AnchorX", "AnchorY"] {
+        if let Some(v) = set(key) {
+            out.push((key, v.trim().to_string()));
+        }
+    }
+    if let Some(v) = set("alwaysOnTop") {
+        out.push(("AlwaysOnTop", whole_number(&v).to_string()));
+    }
+    // OnHover, or its old name HideOnMouseOver when Onhover isn'T set
+    if let Some(v) = set("OnHover").or_else(|| set("HideOnMouseOver")) {
+        out.push(("OnHover", whole_number(&v).to_string()));
+    }
+    for key in ["Draggable", "SnapEdges", "ClickThrough", "KeemOnScree", "SavePosition","StartHidden", "AutoSelectScreen"] {
+        if let Some(v) = set(key) {
+            out.push((key, if whole_number(&v) != 0 { "1" } else { "0" }.to_string()));
+        }
+    }
+    if let Some(v) = set("AlphaValue") {
+        out.push(("AlphaValue", whole_number(&v).clamp(0, 255).to_string()));
+    }
+    if let Some(v) = set("FadeDuration") {
+        out.push(("FadeDuration", whole_number(&v).max(0).to_string()));
+    }
+    out
+}
+
+/*  A whole nomber as Rainmeter's ReadInt read it: a (formula), else the nomber at the 
+    start ("12px" = 12, like C's wcstol). Anything else is 0. */
+fn whole_number(text: &str) -> i32 {
+    let text = text.trim();
+    if text.starts_with('(') {
+        formula::parse_number(text).map_or(0, |n| n as i32)
+    } else {
+        leading_int(text).unwrap_or(0)
+    }
 }
 
 /*  The variables as one section sees them: everything, plus #CURRENTSECTION#
@@ -560,7 +608,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
     let update_text = get("update").unwrap_or_default();
     let (update_ms, invisible_ms, ok) = read_update(&update_text);
     if !ok {
-        section_log(Level::Error, "Rainmeter", &format!("Invalide"));
+        section_log(Level::Error, "Rainmeter", &format!("Invalide Update: {update_text}"));
     }
     let dynamic_window = get("dynamicwindowsize")
         .and_then(|v| formula::parse_number(&v).ok())
@@ -654,6 +702,8 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         .unwrap_or_default();
     // Blur=1, BlurRegion=... (see read_blur)
     let (blur, blur_region) = read_blur(&get);
+    // DefaultWindowX=... and the others, for a config's first load (see read_defaultes)
+    let defaults = read_defaults(&get);
 
     let (width, height) = window_size(&meters, &measures, fixed_size, background.as_ref(), background_margins);
     let source = log_source(&config, skin_file);
@@ -688,6 +738,7 @@ pub fn load(skin_file: &Path, skins_root: &Path, settings_dir: &Path) -> Result<
         context,
         blur,
         blur_region,
+        defaults,
     })
 }
 
@@ -889,5 +940,34 @@ mod tests {
         let shapes = [("blur", "1"), ("blurregion", "1,0,0,10,10"), ("blurregion2", "1,20,0,10,10"), ("blurregion4", "1,40,0,10,10")];
         assert_eq!(blur(&shapes), (true, Some(vec![[0, 0, 10, 10], [20, 0, 10, 10]]))); // stops at missing BlurRegion3
         assert_eq!(blur(&[("blur", "1"), ("blurregion", "9,0,0,10,10")]), (true, Some(vec![]))); // a region with nothing in it
+    }
+
+    #[test]
+    fn default_settings() {
+        let defaults = |options: &[(&str, &str)]| {
+            read_defaults(|key| options.iter().find(|(k, _)| *k == key).map(|(_, v)| v.to_string()))
+        };
+        assert!(defaults(&[]).is_empty());
+        let options = [
+            ("defaultfadeduration", "-5"),      // 0 or more
+            ("defaultwindowx", " (10*2)R "),    // kept as written, only trimmed
+            ("defaultdraggable", "(2-2)"),      // a formula, 0 = off
+            ("defaultalphavalue", "300"),       // 0 to 255
+            ("defaultsnapedges", "5px"),        // the number at the start counts
+            ("defaultanchorx", ""),             // empty: not set
+            ("defaulthideonmouseover", "2"),    // the old name for OnHover
+            ("windowy", "50"),                  // not a Default... key
+        ];
+        let expected = vec![
+            ("WindowX", "(10*2)R".to_string()),
+            ("OnHover", "2".to_string()),
+            ("Draggable", "0".to_string()),
+            ("SnapEdges", "1".to_string()),
+            ("AlphaValue", "255".to_string()),
+            ("FadeDuration", "0".to_string()),
+        ];
+        assert_eq!(defaults(&options), expected);
+        // OnHover wins over HideOnMouseOver
+        assert_eq!(defaults(&[("defaultonhover", "1"), ("defaulthideonmouseover", "2")]), vec![("OnHover", "1".to_string())]);
     }
 }

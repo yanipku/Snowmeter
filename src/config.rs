@@ -315,7 +315,7 @@ pub fn save_setting(cfg: &Config, config: &str, key: &str, value: &str) -> Resul
 }
 
 // Sets some keys in a config's [section], reading and writing the file once
-fn save_options(cfg: &Config, config: &str, options: &[(&str, String)]) -> Result<(), String> {
+pub fn save_options(cfg: &Config, config: &str, options: &[(&str, String)]) -> Result<(), String> {
     let section = config.trim().replace('/', "\\");
     // A ] or a line break in the name would break the file's sections
     if section.contains([']', '\n', '\r']) {
@@ -383,6 +383,15 @@ pub fn read_skin_settings(cfg: &Config, config: &str) -> SkinSettings {
 // Just the position part of read_skin_settings
 pub fn read_position(cfg: &Config, config: &str) -> Options {
     read_skin_settings(cfg, config).position
+}
+
+/*  Whether the config already has settings: a [section] with at least one key in it.
+    Rainmeter's ActivateSkin aska=s this before it writes Active=, and only a config with
+    no settings yet gets the skin's own Default... settings. */
+pub fn has_settings(cfg: &Config, config: &str) -> bool {
+    let text = textfile::read_text(&cfg.file).unwrap_or_default();
+    let ini = Ini::parse(&text);
+    ini.section(&config.trim().replace('/', "\\")).is_some_and(|s| !s.options.is_empty())
 }
 
 /*  Writes the window settings that are missing from the config's [section], with the
@@ -560,4 +569,19 @@ mod tests {
         fs::remove_dir_all(&root).unwrap();
     }
 
+    #[test]
+    fn first_load_has_no_settings() {
+        let base = env::temp_dir().join(format!("snowmeter-test-first-{}", std::process::id()));
+        fs::create_dir_all(&base).unwrap();
+        let cfg = Config { dir: base.clone(), file: base.join("Snowmeter.ini"), section: "Snowmeter" };
+        assert!(!has_settings(&cfg, "Suite\\Clock"));           // no file yet
+        fs::write(&cfg.file, "[Suite\\Clock]\n\n[Other]\nActive=1\n").unwrap();
+        assert!(!has_settings(&cfg, "Suite\\Clock"));           // a section with no keys
+        let defaults = [("WindowX", "200".to_string()), ("Draggable", "0".to_string())];
+        save_options(&cfg, "Suite/Clock", &defaults).unwrap();
+        assert!(has_settings(&cfg, "Suite/Clock"));
+        let s = read_skin_settings(&cfg, "Suite/Clock");
+        assert_eq!((s.position.x.as_str(), s.draggable), ("200", false));
+        fs::remove_dir_all(&base).unwrap();
+    }
 }

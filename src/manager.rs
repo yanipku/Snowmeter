@@ -122,14 +122,27 @@ impl Manager {
             in the list, so nothing is saved for it. */
         let name = skin.file.file_name().map(|n| n.to_string_lossy().to_lowercase());
         let files = config::config_files(&self.skins_root, &skin.config);
+        let index = files.iter().position(|f| Some(f.to_lowercase()) == name);
+        /*  A config loaded for the first time as no settings yet. Asked before Active= is
+            written, since that makes the section.Only skins with Default... keys read the file. */
+        let first_run = index.is_some() && !skin.defaults.is_empty() && !config::has_settings(&self.cfg, &skin.config);
+        if let Some(i) = index {
+            self.save_active(&skin.config, i + 1);
+        }
+        /*  Then, on a first load, the skin's own Default... settings, below Active= as in 
+        Rainmeter, so the settings read just below already see them */
+        if first_run
+            && let Err(e) = config::save_options(&self.cfg, &skin.config, &skin.defaults)
+        {
+            log(Level::Error, &skin.source, &format!("Can't save the skin's default settings: {e}"));
+        }
         let settings = config::read_skin_settings(&self.cfg, &skin.config);
         skin.groups.add(&settings.group);
-        if let Some(i) = files.iter().position(|f| Some(f.to_lowercase()) == name) {
-            self.save_active(&skin.config, i + 1);
-            // and, like Rainmeter, write any window setting the file doesn't have yet
-            if let Err(e) = config::save_missing_settings(&self.cfg, &skin.config, &settings) {
-                log(Level::Error, &skin.source, &format!("Can't save the skin's settings: {e}"));
-            }
+        // and, like Rainmeter, write any window settings the file doesn't have yet
+        if index.is_some()
+            && let Err(e) = config::save_missing_settings(&self.cfg, &skin.config, &settings) 
+        {
+            log(Level::Error, &skin.source, &format!("Can't save the skin's settings: {e}"));
         }
         let rects = crate::monitors::monitor_rects();
         let size = (skin.width, skin.height);
