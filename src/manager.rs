@@ -15,7 +15,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub struct Manager {
     app: Application,
@@ -24,6 +24,9 @@ pub struct Manager {
                             Keys are lowercase config names. The map holds the only strong reference to each
                             window's state; the window's own callbacks hold weak ones (see SkinWindow::open). */
     skins: RefCell<HashMap<String, Rc<SkinWindow>>>,
+    /*  Skins fading out after an unload (Rainmeter's "unmanaged" skins): they're out of
+        'skins' but not closed yet. this list keeps them alive, and quit() closes them first. */
+    closing: RefCell<Vec<Rc<SkinWindow>>>,
 }
 
 /*  Loads a skin file that has no window yet. [$SkinX] and the others see where its settings
@@ -68,6 +71,7 @@ impl Manager {
             skins_root: skins_root.to_path_buf(),
             cfg: cfg.clone(),
             skins: RefCell::new(HashMap::new()),
+            closing: RefCell::new(Vec::new()),
         });
         manager.add_app_actions();
         manager
@@ -154,7 +158,7 @@ impl Manager {
         // The new window opens before the old one closes, so GTK never sees zero windows
         let old = self.skins.borrow_mut().insert(key, window.clone());
         if let Some(old) = old {
-            old.close();
+            old.fade_out_and_close();
         }
         // The first update, at load as in Rainmeter, before OnRefreshAction (with Update=-1 it's the only one)
         window.update();
@@ -224,7 +228,8 @@ impl Manager {
             // The section name from the skin itself, with its real capitalization
             let name = sw.skin.borrow().config.clone();
             self.save_active(&name, 0);
-            sw.close();
+            self.save_active(&name, 0);
+            sw.fade_out_and_close();
         }
     }
 
@@ -233,6 +238,11 @@ impl Manager {
         OnCloseAction can still reach the others. Active= is kept, so the same skins come
         back next time. */
     pub fn quit(&self) {
+        // Skins still fadin out go first, as in Rainmeter's Finalize (DeleteAllUnmanagedSkins)
+        let fading = self.closing.take();
+        for sw in fading {
+            sw.close();
+        }
         loop {
             // The first config by name; the borrow ends with this line
             let first = self.skins.borrow().keys().min().cloned();
@@ -349,6 +359,11 @@ struct SkinWindow {
     menu: RefCell<Option<gtk4::PopoverMenu>>,
     // The focus state the skin was last told about (OnFocusAction / OnUnfocusAction)
     focused: Cell<bool>,
+    // AlphaValue= and FadeDuration=, kept for the fades (load, unload, later OnOver)
+    alpha: Cell<u8>,
+    fade_duration: Cell<u32>,
+    // The ticket of the running fade timer (None = no fade running)
+    fade_timer: RefCell<Option<glib::SourceId>>,
 }
 
 impl SkinWindow {
@@ -370,6 +385,7 @@ impl SkinWindow {
             .title("Snowmeter")
             .resizable(false)
             .decorated(false) // no title bar or frame, like a Rainmeter skin
+            .opacity(0.0) // invisible until the load fade-in (see the end of open())
             .child(&area)
             .build();
 
@@ -412,6 +428,9 @@ impl SkinWindow {
                 saved_position: Cell::new(Some(position)),
                 menu: RefCell::new(None),
                 focused: Cell::new(false),
+                alpha: Cell::new(settings.alpha),
+                fade_duration: Cell::new(settings.fade_duration),
+                fade_timer: RefCell::new(None),
             }
         });
         sw.start_timer();
@@ -701,6 +720,8 @@ impl SkinWindow {
                 sw.focus_changed();
             }
         });
+        // Fade in from invisible to AlphaValue, as Rainmeter does when a skin loads
+        sw.fade(0, settings.alpha);
         window.present();
         sw
     }
@@ -753,16 +774,57 @@ impl SkinWindow {
         }
     }
 
+    // Shows the window at 'alpha', 0.0 (invisible) to 255.0 (opaque), as Rainmeter's UpdateWindowTransparency
+    fn set_alpha(&self, alpha: f64) {
+        self.window.set_opacity(alpha / 255.0);
+    }
+
+    /*  Fade the window from one alpha to another over FadeDuration ms, as RAinmeter's
+        FadeWindow: a 10ms timer works the alpha out from the time gone by, so a late 
+        tick doesn't make the fate longer. a new fade replaces a running one. with
+        FadeDuration=0 the window jumps straight to 'to'. */
+    fn fade(&self, from: u8, to: u8) {
+        if let Some(old) = self.fade_timer.borrow_mut().take() {
+            old.remove();
+        }
+        let duration = f64::from(self.fade_duration.get());
+        let (from, to) = (f64::from(from), f64::from(to));
+        if duration == 0.0 {
+            self.set_alpha(to);
+            return;
+        }
+        self.set_alpha(from);
+        let start = Instant::now();
+        let me = self.me.clone();
+        let id = glib::timeout_add_local(Duration::from_millis(10), move || {
+            let Some(sw) = me.upgrade() else { return glib::ControlFlow::Break };
+            let ms = start.elapsed().as_secs_f64() * 1000.0;
+            if ms >= duration {
+                sw.set_alpha(to);
+                /*  Forget the ticket without remove(): returning Break ends the timer,
+                    and removing a timer that has already ended maked GLib comlain */
+                sw.fade_timer.borrow_mut().take();
+                return glib::ControlFlow::Break;
+            }
+            sw.set_alpha(from + (to - from) * ms / duration);
+            glib::ControlFlow::Continue
+        });
+        *self.fade_timer.borrow_mut() = Some(id);
+    }
+
     /*  Put the window settings read from the settings file into effect, as Rainmeter's
-        Refresh does after reading them again. (At load, opoen() starts with them.) */
+        Refresh does after reading them again. (At load, open() starts with them.) */
     fn apply_settings(&self, s: &SkinSettings) {
         self.draggable.set(s.draggable);
         self.keep_on_screen.set(s.keep_on_screen);
         self.snap_edges.set(s.snap_edges);
         self.save_position.set(s.save_position);
         self.set_click_through(s.click_through);
+        self.alpha.set(s.alpha);
+        self.fade_duration.set(s.fade_duration);
+        self.set_alpha(f64::from(s.alpha));
 
-        // The layer' only when it changed (as Rainmeter: oldZPos != m_WindowZPosition)
+        // The layer only when it changed (as Rainmeter: oldZPos != m_WindowZPosition)
         let old = self.z.replace(s.z);
         if old != s.z && !crate::wayland::set_z_pos(&self.window, s.z) {
             crate::x11::change_z_pos(&self.window, old, s.z);
@@ -933,6 +995,25 @@ impl SkinWindow {
         }
     }
 
+    /*  Unloading: fades the skin out, then closes it FadeDuration + 50 ms later, as 
+        Rainmeter's Deactivate. The manager's 'closing' list keeps the skin alive while
+        it fades; the timer only holds a weak, so a skin quit() already closed is skipped. */
+    fn fade_out_and_close(self: &Rc<Self>) {
+        self.fade(self.alpha.get(), 0);
+        if let Some(manager) = self.manager.upgrade() {
+            manager.closing.borrow_mut().push(Rc::clone(self));
+        }
+        let me = Rc::downgrade(self);
+        let wait = Duration::from_millis(u64::from(self.fade_duration.get()) + 50);
+        glib::timeout_add_local_once(wait, move || {
+            let Some(sw) = me.upgrade() else { return }; // quit() closed it already
+            if let Some(manager) = sw.manager.upgrade() {
+                manager.closing.borrow_mut().retain(|c| !Rc::ptr_eq(c, &sw));
+            }
+            sw.close();
+        });
+    }
+
     // Stops the timers and closes the window
     fn close(&self) {
         /*  OnCloseAction, while the skin is still whole (Rainmeter runs it before tearing
@@ -942,6 +1023,9 @@ impl SkinWindow {
         self.flush_position();
         if let Some(timer) = self.timer.borrow_mut().take() {
             timer.remove();
+        }
+        if let Some(fade) = self.fade_timer.borrow_mut().take() {
+            fade.remove();
         }
         /*  An open menu goes first: GTK wants a widget's children taken off (unparented)
             before the widget itself is freed */

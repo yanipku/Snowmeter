@@ -15,7 +15,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 92 / 174 ≈ **53%**
+- Roadmap checklist: 94 / 185 ≈ **51%**
 - Translations: 0 / 39 = **0%** (the Language Support list; not part of the checklist)
 
 - Compatibility with each kind of desktop (only the desktop boxes count):
@@ -24,26 +24,26 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
   - GNOME (Wayland): 4 / 8 = **50%**
 
 ## Next up
-1. [ ] Skin setting `AlphaValue` (the whole skin's transparency)
-2. [ ] Skin setting `FadeDuration`
-3. [ ] Skin setting `OnHover` (`HideOnMouseOver`): hide or fade when the mouse is over the skin
-4. [ ] Keep the anchor in place when `DynamicWindowSize` resizes the skin
-5. [ ] Skin setting `LoadOrder`
-6. [ ] Skin setting `AutoSelectScreen`
-7. [ ] First load: `[$SkinX]`/`[$SkinY]` see the skin's default position (`skin::load` reads the `Default…` keys and gets the position from the manager before the meters, as Rainmeter) (task, ~30–45 min, added 2026-11-24)
-8. [ ] Skin setting `StartHidden` (with the `!Show` / `!Hide` / `!Toggle` skin bangs); also use the `Update=… | Invisible N` rate while hidden (+15 min)
-9. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
-10. [ ] Skins that fail to load: message box + deactivate, as Rainmeter (added 2026-11-16)
-11. [ ] Startup checks: message box for no skins / settings file not writable
-12. [ ] Only one Snowmeter running (a second start hands its skins or bangs to the running copy)
-13. [ ] Quiet start on GNOME: skip the layer-shell check there, so gtk4-layer-shell doesn't print "your Wayland compositor does not support the Layer Shell protocol" before we fall back to X11 (task, added 2026-11-19)
-14. [ ] GNOME with Ubuntu's desktop icons (DING): when its window is found at startup, `AlwaysOnTop=-1`/`-2` act like `0` (normal), so the skin stays clickable instead of hiding under the icons window (added 2026-11-19)
-15. [ ] X11 and GNOME: our own drag, so `KeepOnScreen` / `SnapEdges` work during the drag and Ctrl/Shift can turn snapping off (added 2026-11-19)
-16. [ ] Choose Snowmeter's license (GPL-2.0-or-later suggested, so Rainmeter's GPL-2.0 translations in `Languages/` can be shipped; they stay out of git until then) (task, added 2026-11-19)
-17. [ ] `IfAbove` / `IfBelow` / `IfEqual` actions
-18. [ ] `IfCondition` / `IfTrueAction` / `IfFalseAction` (after `IfAbove`/`IfBelow`/`IfEqual`, sharing its helpers)
-19. [ ] `IfMatch` / `IfMatchAction` / `IfNotMatchAction`
-20. [ ] `!SetWallpaper` (one backend per desktop: GNOME settings, KDE plasmashell D-Bus, X11; added 2026-11-24)
+1. [ ] `!SetTransparency` / `!FadeDuration` (+ `…Group`) and the Settings ▸ Transparency submenu (~45–60 min, added 2026-11-25)
+2. [ ] `!SetWindowPosition` / `!SetAnchor` (~45–60 min, added 2026-11-25)
+3. [ ] `!MoveMeter` (~20–30 min, added 2026-11-25)
+4. [ ] `!EnableMouseAction` / `!DisableMouseAction` / `!ToggleMouseAction` / `!ClearMouseAction` (+ `…Group`, `…SkinGroup`) (~1–1.5 h, added 2026-11-25)
+5. [ ] `!EditSkin`, the `!Skin:` form, `!LsBoxHook` (~45–60 min, added 2026-11-25)
+6. [ ] `!Quit` / `!RefreshApp` / `!Restart` (~30–45 min, added 2026-11-25)
+7. [ ] Skin setting `OnHover` (`HideOnMouseOver`): hide or fade when the mouse is over the skin
+8. [ ] Keep the anchor in place when `DynamicWindowSize` resizes the skin
+9. [ ] Skin setting `LoadOrder`
+10. [ ] Skin setting `AutoSelectScreen`
+11. [ ] `!AutoSelectScreen` / `!AutoSelectScreenGroup` (~20–30 min, added 2026-11-25)
+12. [ ] First load: `[$SkinX]`/`[$SkinY]` see the skin's default position (`skin::load` reads the `Default…` keys and gets the position from the manager before the meters, as Rainmeter) (task, ~30–45 min, added 2026-11-24)
+13. [ ] Skin setting `StartHidden` (with the `!Show` / `!Hide` / `!Toggle` skin bangs); also use the `Update=… | Invisible N` rate while hidden (+15 min)
+14. [ ] `!ShowFade` / `!HideFade` / `!ToggleFade`, the `…Group` versions of the six show/hide bangs, `!ForceEnableVisibleMode` (~45–60 min, added 2026-11-25)
+15. [ ] Always on top / on the desktop / normal (Wayland needs compositor support)
+16. [ ] Skins that fail to load: message box + deactivate, as Rainmeter (added 2026-11-16)
+17. [ ] Startup checks: message box for no skins / settings file not writable
+18. [ ] Only one Snowmeter running (a second start hands its skins or bangs to the running copy)
+19. [ ] Quiet start on GNOME: skip the layer-shell check there, so gtk4-layer-shell doesn't print "your Wayland compositor does not support the Layer Shell protocol" before we fall back to X11 (task, added 2026-11-19)
+20. [ ] GNOME with Ubuntu's desktop icons (DING): when its window is found at startup, `AlwaysOnTop=-1`/`-2` act like `0` (normal), so the skin stays clickable instead of hiding under the icons window (added 2026-11-19)
 ---
 
 ## Skin files and variables
@@ -75,16 +75,23 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
   - [x] Wayland (layer-shell): monitor + margins (`wayland.rs`)
   - [x] GNOME: through XWayland, as X11. GNOME's window manager (Mutter) places a new window itself once it takes it over, after our first move, so the saved position is set again at that point (`when_managed`). Tested on Ubuntu 25.04 (Raspberry Pi 5). Long-term plan in Notes and ideas at the end
 - [x] Skin setting `SavePosition` (0 = moves aren't saved: a drag or `!Move` still moves the skin, but `WindowX`/`WindowY` keep the old place; not written in when missing, as Rainmeter). Right-click ▸ Settings ▸ Save position switches it, writes `SavePosition=`, and turning it on saves where the skin is now. `!Refresh` sends an unsaved skin back to its saved place, as Rainmeter
-- [x] The skin's own defaults: `[Rainmeter]` `DefaultWindowX`/`Y`, `DefaultAnchorX`/`Y`, `DefaultAlwaysOnTop`, `DefaultOnHover` (or the old `DefaultHideOnMouseOver`), `DefaultDraggable`, `DefaultSnapEdges`, `DefaultClickThrough`, `DefaultKeepOnScreen`, `DefaultSavePosition`, `DefaultStartHidden`, `DefaultAutoSelectScreen`, `DefaultAlphaValue` (0–255), `DefaultFadeDuration` (0 or more). As in Rainmeter, they are used only when a config is loaded for the first time (its section in the settings file is missing or empty): the ones that are set are written into the section, below `Active=`, as plain keys (positions as written, formulas and all; numbers with Rainmeter's `ReadInt`; bools as 1/0), then the skin reads its settings as usual. Refresh, a variant switch or a restart never apply them again. All 15 are written, even those not used yet (`OnHover`, `AlphaValue`, …). Difference: on that very first load, options read once at load that use `[$SkinX]`/`[$SkinY]` see 0,0 instead of the default position (we work the position out before reading the skin); from the first update on, and on every later load, it's right (fix: Next up 7)
-- [ ] Skin setting `AlphaValue` (the whole skin's transparency)
-- [ ] Skin setting `FadeDuration`
+- [ ] Bangs: `!SetWindowPosition X Y [AnchorX AnchorY] [Config]` and `!SetAnchor X Y [Config]` (the same forms as `WindowX`/`AnchorX`: %, R/B, `@N`, formulas; saved unless `SavePosition=0`; added 2026-11-25)
+- [x] The skin's own defaults: `[Rainmeter]` `DefaultWindowX`/`Y`, `DefaultAnchorX`/`Y`, `DefaultAlwaysOnTop`, `DefaultOnHover` (or the old `DefaultHideOnMouseOver`), `DefaultDraggable`, `DefaultSnapEdges`, `DefaultClickThrough`, `DefaultKeepOnScreen`, `DefaultSavePosition`, `DefaultStartHidden`, `DefaultAutoSelectScreen`, `DefaultAlphaValue` (0–255), `DefaultFadeDuration` (0 or more). As in Rainmeter, they are used only when a config is loaded for the first time (its section in the settings file is missing or empty): the ones that are set are written into the section, below `Active=`, as plain keys (positions as written, formulas and all; numbers with Rainmeter's `ReadInt`; bools as 1/0), then the skin reads its settings as usual. Refresh, a variant switch or a restart never apply them again. All 15 are written, even those not used yet (`OnHover`, `StartHidden`, …). Difference: on that very first load, options read once at load that use `[$SkinX]`/`[$SkinY]` see 0,0 instead of the default position (we work the position out before reading the skin); from the first update on, and on every later load, it's right (fix: Next up 12)
+- [x] Skin setting `AlphaValue` (the whole skin's transparency, 0–255, default 255; a number or a `(formula)`, clamped as Rainmeter's `ReadInt` + min/max; read at load and again on `!Refresh`; as in Rainmeter it isn't added to the settings file when a skin loads, only a `DefaultAlphaValue` writes it. Uses GTK's window opacity, so it needs a compositor, like the transparent background. Not yet: the right-click Transparency submenu (greyed) and `!SetTransparency`)
+- [x] Skin setting `FadeDuration` (ms, default 250, below 0 = 0; read at load and on `!Refresh`). As in Rainmeter's `FadeWindow`: a skin fades in from invisible to `AlphaValue` when it loads, and fades out when it's unloaded (also the old skin on a variant switch), closing `FadeDuration + 50` ms later, so `OnCloseAction` runs after the fade; a 10 ms timer works the alpha out from the time gone by; quitting the program and `!Refresh` don't fade. Quitting closes the skins still fading out first, running their `OnCloseAction`, as Rainmeter's `Finalize`. Not yet: `!FadeDuration` bang, `!ShowFade`/`!HideFade` (with `StartHidden`)
+- [ ] Bangs: `!SetTransparency` (0–255 or a formula; changes the alpha straight away but isn't saved) and `!FadeDuration` (used from the next fade, saved then), their `…Group` versions, and the right-click Settings ▸ Transparency submenu (0 % … 90 %, saves `AlphaValue=`) (added 2026-11-25)
 - [ ] Skin setting `OnHover` (`HideOnMouseOver`): hide or fade when the mouse is over the skin
 - [ ] Keep the anchor in place when `DynamicWindowSize` resizes the skin
 - [ ] Skin setting `LoadOrder`
 - [ ] Skin setting `AutoSelectScreen`
+- [ ] Bangs: `!AutoSelectScreen` (1, 0 or -1 to toggle; saved) and `!AutoSelectScreenGroup` (added 2026-11-25)
 - [ ] Skin setting `StartHidden` (with the `!Show` / `!Hide` / `!Toggle` skin bangs); also use the `Update=… | Invisible N` rate while hidden
+- [ ] Bangs: `!ShowFade`, `!HideFade`, `!ToggleFade`, the `…Group` versions of all six show/hide bangs (`!ShowGroup`, `!HideFadeGroup`, …), and `!ForceEnableVisibleMode` (stop treating a covered skin as invisible for the `Invisible N` rate) (added 2026-11-25)
+- [ ] Skin setting `Zoom` and `!SetZoomFactor` (scales the whole skin; `Default` clears it) (added 2026-11-25)
 - [x] Several skins at once (several on the command line; one with an error is skipped)
 - [x] Load, unload and refresh skins
+- [ ] Bangs: `!EditSkin`; the `!Skin:` form (`!Skin:Load`, `!Skin:Unload`, `!Skin:Toggle`, `!Skin:Edit`, and `!Skin:<Bang> Config …`, which aims any skin bang at a config or a group); `!LsBoxHook` (old LiteStep bang, does nothing) (added 2026-11-25)
+- [ ] Bangs: `!Quit`, `!RefreshApp` (refresh every skin, as the menu's Refresh all), `!Restart` (added 2026-11-25)
 - [ ] Skins that fail to load (Skin.cpp `ReadSkin`): a message box with the `[Message]` text (`NoMetersInSkin`, `UnableToRefreshSkin`, `NewVersionRequired` for `SyntaxVersion` > 2 or a newer `AppVersion`), then the skin is 
         deactivated (`Active=0`), on refresh too. Switching variants closes the old skin first, so a broken variant leaves none running. Today a skin with no meters loads as an empty 1×1 window, and a failed refresh keeps the old skin. Same message box for: `!ActivateConfig` on a missing file (`UnableToActivateSkin`; ours only logs it), Refresh all finding a running skin's file or folder gone (deactivated, `UnableToRefreshSkin`), and an `@Include` loop (`IncludeInfiniteLoop`; ours logs and skips it)
 - [ ] Startup checks with a message box, as Rainmeter: no skins in the skins folder (`NoAvailableSkins`, with the path), and a settings file that can't be written (`SettingsNotWritable` + `SettingsReadOnly`, once at startup; today 
@@ -98,7 +105,7 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
         each submenu page by its label, so repeated names in the Skins tree, such as Demo ▸ Demo or two Clock folders, opened
         the wrong page. In WSLg only, a menu stays on screen a moment after closing, and clicking the skin while the menu is
         open makes it slide under the skin; both are fine in Xephyr. Re-check on the Pi.)
-- [ ] Tray icon
+- [ ] Tray icon (with `!TrayMenu`)
   - [ ] X11: most panels show tray icons (StatusNotifierItem)
   - [ ] Wayland (layer-shell): the same
   - [ ] GNOME: hidden unless the user installs the AppIndicator extension
@@ -122,14 +129,14 @@ At startup Snowmeter picks Wayland with layer-shell first, then X11 through XWay
 
 ## Manage window
 A normal GTK4 window (with a title bar) for running Snowmeter without the terminal, like Rainmeter's Manage dialog.
-- [ ] Open it from the tray icon, the right-click menu, or by starting `snowmeter` with no skin
+- [ ] Open it (also with `!Manage`) from the tray icon, the right-click menu, or by starting `snowmeter` with no skin
 - [ ] Skins tab: tree of every config and .ini in the skins folder, with Load / Unload / Refresh / Edit buttons
 - [ ] Skins tab: the selected skin's settings (X/Y, position, transparency, on hover, draggable, click-through, keep on screen, snap edges, load order)
 - [ ] Skins tab: skin info from `[Metadata]` (Name, Author, Version, License, Information)
-- [ ] Layouts tab: save and load layouts (which skins are loaded, and where)
+- [ ] Layouts tab: save and load layouts (also `!LoadLayout`) (which skins are loaded, and where)
 - [ ] Settings tab: skins folder, text editor, logging
 - [ ] Settings tab: language support (pick the language; the app's text read from the language files, right-to-left for Arabic and Hebrew; the languages themselves are listed under Language Support)
-- [ ] Log / About window: messages and errors, loaded skins, version
+- [ ] Log / About window (`!About`; `!Debug` turns debug logging on and off): messages and errors, loaded skins, version
 - [ ] Start Snowmeter at login (an XDG autostart `.desktop` file)
 
 ## [Rainmeter] section
@@ -163,12 +170,14 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
         counts as the skin, with no transparent-pixel test; a `ClickThrough` skin gets no hover; Button meter focus waits for the Button meter)
 - [x] Scroll actions (`MouseScrollUpAction`, `MouseScrollDownAction`, `MouseScrollLeftAction`, `MouseScrollRightAction`; one action per wheel step, chosen like a click: top meter under the mouse, else `[Rainmeter]`; touchpad 
         moves are added up into steps. Up/down tested; left/right and touchpad untested (no hardware). A `ClickThrough` skin gets no scrolls)
+- [ ] Bangs: `!EnableMouseAction`, `!DisableMouseAction`, `!ToggleMouseAction`, `!ClearMouseAction` (Meter Actions; `*` = all), their `…Group` versions for meter groups and `…SkinGroup` versions for skin groups (added 2026-11-25)
 - [x] `ToolTipText`, `ToolTipTitle`, `ToolTipIcon`, `ToolTipWidth`, `ToolTipType`, `ToolTipHidden` (on every meter type; the top visible meter under the mouse with its tooltip on wins; `%1`… stay live while it shows; `[Rainmeter]
         ToolTipHidden` is the default for meters. Laid out like Windows: icon + bold title, then the text wrapped at `ToolTipWidth`. Stock icons map to theme icons (`dialog-information`, …); an icon file is loaded once when the meter is built. Differences: `ToolTipType=1` (balloon) draws as a normal tooltip; a `ClickThrough` skin gets no tooltips; in WSLg it hides about 1 s after leaving the meter, to re-check on a real desktop)
 - [x] Bangs: `!SetVariable` (formula values; `[#Var]` in actions is read at click time)
 - [x] Bangs: `!WriteKeyValue` (Section Key Value [File], as Rainmeter: the file must already exist and be inside the skins or settings folder, `../` is refused, a read-only file gives a warning, `(formula)` values are worked out, 
         the file keeps its encoding, the skin isn't reloaded. Differences: symlinks are followed before the folder check; line breaks in a name or value are refused; new lines use the file's own line endings; a new key goes after any comment right under the section's last key, but before comments that follow a blank line (Rainmeter puts it after all of them))
 - [x] Bangs: `!ShowMeter`, `!HideMeter`, `!ToggleMeter` (take effect at the next update, as in Rainmeter)
+- [ ] Bangs: `!MoveMeter X Y Meter` (added 2026-11-25)
 - [x] Bangs: `!ShowMeterGroup`, `!HideMeterGroup`, `!ToggleMeterGroup` (also `!ShowMeter Group=Name` and the like; a toggle flips each meter on its own; a group with no meters in it is silent, as in Rainmeter)
 - [x] Bangs: `!SetOption` on meters and measures (read again at the next update, as in Rainmeter; a measure keeps its state, such as the Calc counter). On `[Rainmeter]`, only the `Context…` options (the right-click menu's custom items)
 - [x] Bangs: `!SetOptionGroup` (every meter, then every measure, in the group; also `!SetOption Group=Name …`; an empty value removes the option, even the one written in the file, as in Rainmeter)
@@ -188,6 +197,8 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] Bangs for the window settings: `!ZPos`, `!Draggable`, `!ClickThrough`, `!KeepOnScreen`, `!SnapEdges` (1, 0, or -1 to toggle; the new value is saved to the settings file)
 - [x] Bangs: `!ActivateConfig`, `!DeactivateConfig`, `!ToggleConfig`
 - [x] Bangs aimed at other skins: an extra config argument, or `*` for all (Rainmeter's DoBang rule)
+- [ ] Bangs: `!SetClip Text` (puts text on the clipboard, through GDK) (added 2026-11-25)
+- [ ] Bangs: `!SendKey Key` (presses a key for the user; X11 through XTest; Wayland has no standard way, so it may stay X11-only) (added 2026-11-25)
 - [ ] Running external programs from actions (`["program"]`)
 - [ ] Bangs: `!SetWallpaper File [Style]` (Rainmeter: the file path is relative to the skin's folder; Style = `Center`, `Tile`, `Stretch`, `Fit`, `Fill` (any case), empty = keep the current style; Windows converts the image to `Wallpaper.bmp` in the settings folder first; a file that can't be read logs `!SetWallpaper: Unable to read file: …`). Linux has no single wallpaper setting, so it needs one backend per desktop
   - [ ] X11: the desktop's own setting where it has one (Xfce `xfconf`, …), else draw it on the root window
@@ -220,7 +231,7 @@ A normal GTK4 window (with a title bar) for running Snowmeter without the termin
 - [x] `Calc`: `Formula`, `Counter`, `Random`, `LowBound`/`HighBound`, `UpdateRandom`
 - [ ] `Calc`: `UniqueRandom`
 - [ ] `FreeDiskSpace` (reverted earlier)
-- [ ] `NetIn` / `NetOut` / `NetTotal`
+- [ ] `NetIn` / `NetOut` / `NetTotal` (with `!ResetStats`)
 - [ ] `Uptime`
 - [ ] `Loop`
 - [ ] `String`
@@ -371,4 +382,5 @@ Goal: make porting a Rainmeter plugin to Snowmeter as easy as possible for its a
 - Help for authors (most porting work is the plugin's own Windows code, not our API): a porting guide (registry → config file, WMI / performance counters → `/proc` and `/sys`, Windows audio → PipeWire/PulseAudio, media → MPRIS, …); a template project (`CMakeLists.txt` building x86_64 and ARM64); a test runner that loads a `.so` and calls `Initialize`/`Update` outside Snowmeter; a `snowmeter-plugin` Rust crate for new plugins.
 - C# plugins (Rainmeter's `Rainmeter.cs` API): possible later through .NET on Linux (NativeAOT can export C functions), more work.
 - Scripts in other languages (Python, …): out-of-process plugins, a separate program talking to Snowmeter over stdin/stdout or D-Bus, using the same function names as messages. Crash-safe, can be sandboxed, any language; costs a message per call (fine at normal `Update=` rates). Embedding Python (`pyo3`) was rejected: a big dependency, and scripts would run inside Snowmeter with full rights. The Lua `Script` measure stays embedded, as in Rainmeter.
+- Bangs: `!CommandMeasure` reaches a plugin's `ExecuteBang`; the old `!PluginBang "Measure Command"` form should work too (added 2026-11-25).
 - Security: a native plugin runs inside Snowmeter with full rights, and its crash takes every skin down; say so clearly to users who install plugins.

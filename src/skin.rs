@@ -334,7 +334,7 @@ fn read_defaults(get: impl Fn(&str) -> Option<String>) -> Vec<(&'static str, Str
 
 /*  A whole nomber as Rainmeter's ReadInt read it: a (formula), else the nomber at the 
     start ("12px" = 12, like C's wcstol). Anything else is 0. */
-fn whole_number(text: &str) -> i32 {
+pub fn whole_number(text: &str) -> i32 {
     let text = text.trim();
     if text.starts_with('(') {
         formula::parse_number(text).map_or(0, |n| n as i32)

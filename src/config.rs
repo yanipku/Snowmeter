@@ -3,6 +3,7 @@ use crate::log::{log, Level};
 use crate::paths;
 use crate::position::{eval_formula, Options, ZPos};
 use crate::sectionvar::leading_int;
+use crate::skin::whole_number;
 use crate::textfile;
 use std::env;
 use std::fs;
@@ -342,6 +343,8 @@ pub struct SkinSettings {
     pub snap_edges: bool,       // SnapEdges=, default 1
     pub save_position: bool,    // SavePosition=, default 1 (0 = moves aren't saved)
     pub group: String,          // Group=: the config's groups (the skin file can add more)
+    pub alpha: u8,              // AlphaValue=, 0 (invisible) to 255 (opaque), default 255
+    pub fade_duration: u32,     // FadeDuration=, in ms, default 250 (0 = no fade)
 }
 
 /*  Reads a config's window settings, reading the file once. Missing ones get
@@ -377,6 +380,8 @@ pub fn read_skin_settings(cfg: &Config, config: &str) -> SkinSettings {
         snap_edges: get_bool("snapedges", true),
         save_position: get_bool("saveposition", true),
         group: get("group").unwrap_or_default(),
+        alpha: get("alphavalue").map_or(255, |v| whole_number(&v).clamp(0, 255) as u8),
+        fade_duration: get("fadeduration").map_or(250, |v| whole_number(&v).max(0) as u32),
     }
 }
 

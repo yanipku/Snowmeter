@@ -12,7 +12,7 @@ The full checklist, compared with Rainmeter for Windows, is in [ROADMAP.md](ROAD
 
 - Overall estimate: **15–20%**
 - Main app only (without the plugins that come with Rainmeter): **20–25%**
-- Roadmap checklist: 92 / 174 ≈ **53%**
+- Roadmap checklist: 94 / 185 ≈ **51%**
 - Translations: 0 / 39 = **0%**
 
 - Compatibility with each kind of desktop (the desktop-dependent items in the roadmap):
@@ -30,7 +30,7 @@ The full checklist, compared with Rainmeter for Windows, is in [ROADMAP.md](ROAD
 - [x] Several skins at once (give several on the command line); with no skin given, last time's skins are loaded
 - [x] Skin positions are remembered on X11, and on Wayland desktops with layer-shell (KDE, sway, labwc, …)
 
-- [x] Per-skin window settings: `AlwaysOnTop`, `Draggable`, `ClickThrough`, `KeepOnScreen`, `SnapEdges`, `SavePosition`, `AnchorX`/`AnchorY`, and the skin's own `Default…` settings for its first load
+- [x] Per-skin window settings: `AlwaysOnTop`, `Draggable`, `ClickThrough`, `KeepOnScreen`, `SnapEdges`, `SavePosition`, `AnchorX`/`AnchorY`, `AlphaValue`, `FadeDuration` (fade in at load, fade out at unload), and the skin's own `Default…` settings for its first load
 - [x] Blur behind the skin (`Blur`, `BlurRegion`) on KDE Plasma, on X11 and Wayland
 
 ## Not yet
@@ -57,6 +57,7 @@ Skins are meant to work as they do on Windows. Where Snowmeter does something di
 - `AlwaysOnTop`: X11 has no separate "topmost" or "on desktop" level, so 2 acts as 1 and -2 as -1. Wayland (layer-shell) has no "normal" level: -2, -1 and 0 all sit at the bottom, 1 is on top, 2 is above everything.
 - On X11 and GNOME, `SnapEdges` and `KeepOnScreen` apply when the drag ends, so the skin jumps into place, and Ctrl/Shift can't turn snapping off. On Wayland they work during the drag, as on Windows.
 - Right-click menu: the skin name isn't bold (GTK's menus have no markup); Edit skin opens the `.ini` with the desktop's default app (`ConfigEditor=` not yet); there's no Restart item; the program submenu is called "Snowmeter".
+- `AlphaValue` and `FadeDuration` need a compositor, like the transparent background; without one the skin stays fully opaque and doesn't fade. The right-click Transparency submenu and `!SetTransparency` aren't there yet.
 - A skin's `Default…` settings: on the config's very first load, options read once at load that use `[$SkinX]`/`[$SkinY]` see 0,0 instead of the default position (it's right from the first update on, and on every later load).
 - `!SkinMenu` opens at the mouse when it's over that skin, otherwise at the skin's top-left corner (Wayland doesn't tell a program where the mouse is elsewhere).
 - The log is printed to the terminal (stderr), in Rainmeter's log-file format. Control characters are shown as `?`. Debug lines always print (Rainmeter needs `Debug=1`).
